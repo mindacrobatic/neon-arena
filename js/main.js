@@ -67,7 +67,7 @@ const enemies = new EnemyManager(scene, world, effects, {
     player.takeDamage(amount);
     player.addShake(0.12 + amount * 0.004);
     game.hooks.onPlayerHurt(pos);
-    if (!player.alive) beginDeath();
+    // death is detected centrally in the game loop (covers every damage source)
   },
   onHitEnemy(enemy, killed) {
     hud.hitmarker(killed);
@@ -128,6 +128,7 @@ function startGame() {
 }
 
 function beginDeath() {
+  if (game.state !== 'playing') return; // idempotent: only from the playing state
   game.state = 'dying';
   game.deathT = 0;
   weapons.release();
@@ -277,32 +278,55 @@ renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.05);
   const t = clock.elapsedTime;
 
-  if (game.state === 'playing') {
-    syncInput();
-    player.update(dt);
-    enemies.update(dt, player, camera);
-    weapons.update(dt);
-    pickups.update(dt, player);
-    effects.update(dt);
-    world.update(t);
-    updateHud(dt);
-  } else if (game.state === 'dying') {
-    game.deathT += dt;
-    player.update(dt);
-    enemies.update(dt, player, camera);
-    effects.update(dt);
-    world.update(t);
-    updateHud(dt);
-    if (game.deathT > 1.7) toGameOver();
-  } else {
-    world.update(t);
-    effects.update(dt);
-  }
+  // Any gameplay exception is caught and surfaced instead of silently
+  // killing the animation loop (which looks like a frozen browser).
+  try {
+    if (game.state === 'playing') {
+      syncInput();
+      player.update(dt);
+      enemies.update(dt, player, camera);
+      weapons.update(dt);
+      pickups.update(dt, player);
+      effects.update(dt);
+      world.update(t);
+      updateHud(dt);
+      // Central death check — catches every damage source (enemy fire,
+      // melee, rocket splash / self damage, ...).
+      if (!player.alive) beginDeath();
+    } else if (game.state === 'dying') {
+      game.deathT += dt;
+      player.update(dt);
+      weapons.update(dt);   // let rockets in flight finish their show
+      enemies.update(dt, player, camera);
+      effects.update(dt);
+      world.update(t);
+      updateHud(dt);
+      if (game.deathT > 1.7) toGameOver();
+    } else if (game.state !== 'fatal') {
+      world.update(t);
+      effects.update(dt);
+    }
 
-  // keep the viewmodel camera in sync (FOV changes with sniper zoom)
-  vmCamera.fov = camera.fov;
-  vmCamera.aspect = camera.aspect;
-  vmCamera.updateProjectionMatrix();
+    // keep the viewmodel camera in sync (FOV changes with sniper zoom)
+    vmCamera.fov = camera.fov;
+    vmCamera.aspect = camera.aspect;
+    vmCamera.updateProjectionMatrix();
+  } catch (err) {
+    console.error('[NEON ARENA] frame error:', err);
+    if (game.state !== 'fatal') {
+      game.state = 'fatal';
+      weapons.release();
+      const el = document.getElementById('fatal');
+      if (el) {
+        el.style.display = 'flex';
+        el.textContent =
+          '\u26A0  Runtime error \u2014 the game has stopped.\n\n' +
+          (err && err.stack ? err.stack : String(err)) +
+          '\n\nReload the page to play again.';
+      }
+      if (document.pointerLockElement) document.exitPointerLock();
+    }
+  }
 
   renderer.clear();
   renderer.render(scene, camera);

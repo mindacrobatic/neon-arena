@@ -177,8 +177,9 @@ class Rocket {
     glow.scale.setScalar(0.7);
     glow.position.z = 0.28;
     g.add(glow);
-    this.light = new THREE.PointLight(0xff7733, 9, 14, 2);
-    g.add(this.light);
+    // claim a pooled light (never added/removed from the scene)
+    this.light = sys.rocketLights.find(l => l.intensity === 0) || null;
+    if (this.light) this.light.intensity = 9;
     g.position.copy(pos);
     g.quaternion.setFromUnitVectors(ZN, this.vel.clone().normalize());
     sys.scene.add(g);
@@ -192,6 +193,7 @@ class Rocket {
     this.vel.y -= this.pdef.gravity * dt;
     this.group.position.addScaledVector(this.vel, dt);
     this.group.quaternion.setFromUnitVectors(ZN, this.vel.clone().normalize());
+    if (this.light) this.light.position.copy(this.group.position);
     this.smokeT -= dt;
     if (this.smokeT <= 0) {
       this.smokeT = 0.03;
@@ -217,6 +219,7 @@ class Rocket {
     this.sys.scene.remove(this.group);
     this.group.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
     this.mats.forEach(m => m.dispose());
+    if (this.light) { this.light.intensity = 0; this.light = null; } // release to pool
   }
 }
 
@@ -266,6 +269,16 @@ export class WeaponSystem {
     scene.add(this.flash);
     this.worldFlashLight = new THREE.PointLight(0xffcc88, 0, 14, 2);
     scene.add(this.worldFlashLight);
+
+    // Pooled rocket lights: always in the scene (intensity 0 when idle) so
+    // spawning/exploding rockets never changes the light count — changing it
+    // would force three.js to recompile every lit shader (browser stall).
+    this.rocketLights = [];
+    for (let i = 0; i < 3; i++) {
+      const l = new THREE.PointLight(0xff7733, 0, 14, 2);
+      scene.add(l);
+      this.rocketLights.push(l);
+    }
 
     this.cooldown = 0;
     this.bloom = 0;
