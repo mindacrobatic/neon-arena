@@ -35,6 +35,12 @@ export class Effects {
     this.tracers = [];
     this.blasts = [];
     this.sparkMats = new Map();
+    // Pooled explosion light: stays in the scene permanently (intensity 0
+    // when idle) so the light count never changes at runtime — adding/
+    // removing lights would force three.js to recompile every lit shader,
+    // which stalls the browser on each explosion.
+    this.blastLight = new THREE.PointLight(0xffaa44, 0, 26, 2);
+    scene.add(this.blastLight);
   }
 
   _sparkMat(color) {
@@ -85,11 +91,8 @@ export class Effects {
     const ball = new THREE.Mesh(blastGeo, mat);
     ball.position.copy(pos);
     this.scene.add(ball);
-    const light = new THREE.PointLight(0xffaa44, 30, radius * 4, 2);
-    light.position.copy(pos);
-    light.position.y += 0.5;
-    this.scene.add(light);
-    this.blasts.push({ ball, mat, light, life: 0, maxLife: 0.55, radius });
+    this.blastLight.position.set(pos.x, pos.y + 0.5, pos.z);
+    this.blasts.push({ ball, mat, pos: pos.clone(), life: 0, maxLife: 0.55, radius });
     this.spark(pos, 0xffdd88, Math.min(30, (10 + radius * 2) | 0), radius * 1.6, 0.09);
     this.spark(pos, 0x884422, 10, radius * 0.8, 0.14);
   }
@@ -123,13 +126,13 @@ export class Effects {
       }
       t.mesh.material.opacity = 0.85 * (1 - t.life / t.maxLife);
     }
+    let strongest = null, strongestI = 0;
     for (let i = this.blasts.length - 1; i >= 0; i--) {
       const b = this.blasts[i];
       b.life += dt;
       const k = b.life / b.maxLife;
       if (k >= 1) {
         this.scene.remove(b.ball);
-        this.scene.remove(b.light);
         b.mat.dispose();
         this.blasts.splice(i, 1);
         continue;
@@ -137,8 +140,12 @@ export class Effects {
       b.ball.scale.setScalar(b.radius * (0.3 + 0.7 * Math.sqrt(k)));
       b.mat.opacity = 0.9 * (1 - k) * (1 - k);
       b.mat.color.setHSL(0.09 - 0.06 * k, 1, 0.55 + 0.2 * (1 - k));
-      b.light.intensity = 30 * (1 - k);
+      const inten = 30 * (1 - k);
+      if (inten > strongestI) { strongestI = inten; strongest = b; }
     }
+    // drive the single pooled light from the strongest active blast
+    if (strongest) this.blastLight.position.set(strongest.pos.x, strongest.pos.y + 0.5, strongest.pos.z);
+    this.blastLight.intensity = strongestI;
   }
 
   clear() {
@@ -151,9 +158,9 @@ export class Effects {
     this.tracers.length = 0;
     for (const b of this.blasts) {
       this.scene.remove(b.ball);
-      this.scene.remove(b.light);
       b.mat.dispose();
     }
     this.blasts.length = 0;
+    this.blastLight.intensity = 0;
   }
 }

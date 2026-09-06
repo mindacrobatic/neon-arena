@@ -47,7 +47,7 @@ class Enemy {
     this.baseScale = def.scale;
     this.maxHp = def.hp * (1 + (wave - 1) * 0.14);
     this.hp = this.maxHp;
-    this.damage = def.damage * (1 + (wave - 1) * 0.07);
+    this.attackDamage = def.damage * (1 + (wave - 1) * 0.07);
     this.speed = def.speed * (1 + Math.min(0.35, (wave - 1) * 0.02));
     this.radius = 0.42 * def.scale;
     this.height = 1.9 * def.scale;
@@ -326,7 +326,7 @@ class Enemy {
         if (this.windT <= 0) {
           this.swingT = 0.3;
           if (ctx.player.alive && dist < this.def.range + 0.9 && Math.abs(dy) < 1.7) {
-            ctx.damagePlayer(this.damage, gp);
+            ctx.damagePlayer(this.attackDamage, gp);
           }
         }
       } else if (this.swingT > 0) {
@@ -466,7 +466,7 @@ export class EnemyManager {
     this.projectiles.push({
       mesh, mat, sprMat,
       vel: dir.multiplyScalar(def.projSpeed),
-      damage: enemy.damage,
+      damage: enemy.attackDamage,
       gravity: PROJ_G,
       life: 0,
       color: def.glow,
