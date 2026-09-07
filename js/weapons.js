@@ -488,12 +488,16 @@ export class WeaponSystem {
     this.raycaster.far = Infinity;
   }
 
-  explodeRocket(rocket, pos) {
-    rocket.dispose();
-    const i = this.rockets.indexOf(rocket);
-    if (i >= 0) this.rockets.splice(i, 1);
-    const pd = rocket.pdef;
-    this.game.effects.explosion(pos, pd.radius);
+  /**
+   * Shared area explosion (rockets AND grenades): visuals, audio,
+   * splash damage with falloff, optional self damage + shake.
+   * opt: { radius, damage, selfDamage }
+   */
+  explodeAt(pos, opt) {
+    const radius = opt.radius;
+    const damage = opt.damage;
+    const selfDamage = opt.selfDamage ?? 0;
+    this.game.effects.explosion(pos, radius);
     this.game.audio.explosion();
 
     // splash damage to enemies (falloff with distance)
@@ -501,22 +505,29 @@ export class WeaponSystem {
       if (e.state === 'dying') continue;
       const ep = e.group.position;
       const d = Math.hypot(ep.x - pos.x, ep.y + 0.9 - pos.y, ep.z - pos.z);
-      if (d < pd.radius) {
-        const f = 1 - 0.65 * (d / pd.radius);
+      if (d < radius) {
+        const f = 1 - 0.65 * (d / radius);
         const dir = new THREE.Vector3(ep.x - pos.x, 0.3, ep.z - pos.z).normalize();
-        this.game.enemies.damageEnemy(e, pd.damage * f, ep, dir);
+        this.game.enemies.damageEnemy(e, damage * f, ep, dir);
       }
     }
     // self damage + shake
     const p = this.game.player;
     const d = Math.hypot(p.position.x - pos.x, p.position.y + 0.9 - pos.y, p.position.z - pos.z);
-    if (p.alive && d < pd.radius * 1.1) {
-      const f = Math.max(0.25, 1 - d / (pd.radius * 1.1));
-      p.takeDamage(pd.selfDamage * f);
+    if (selfDamage > 0 && p.alive && d < radius * 1.1) {
+      const f = Math.max(0.25, 1 - d / (radius * 1.1));
+      p.takeDamage(selfDamage * f);
       this.game.audio.hurt();
       this.game.hooks.onPlayerHurt?.(pos);
     }
-    p.addShake(Math.max(0, 1.1 * (1 - d / (pd.radius * 1.8))));
+    p.addShake(Math.max(0, 1.1 * (1 - d / (radius * 1.8))));
+  }
+
+  explodeRocket(rocket, pos) {
+    rocket.dispose();
+    const i = this.rockets.indexOf(rocket);
+    if (i >= 0) this.rockets.splice(i, 1);
+    this.explodeAt(pos, rocket.pdef);
   }
 
   update(dt) {

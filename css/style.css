@@ -124,6 +124,15 @@ body {
 #reload-hint { display: none; font-size: 11px; letter-spacing: 0.15em; color: #ffd23d; margin-bottom: 6px; }
 #reload-hint.show { display: block; animation: blink 1s step-start infinite; }
 @keyframes blink { 50% { opacity: 0.25; } }
+#grenade-row {
+  display: flex; justify-content: flex-end; align-items: baseline; gap: 10px;
+  font-size: 12px; letter-spacing: 0.12em; margin: 2px 0 4px;
+}
+#grenade-count {
+  color: #9dffb0; font-weight: 700; font-size: 17px;
+  font-variant-numeric: tabular-nums; text-shadow: 0 0 8px rgba(120, 255, 160, 0.4);
+}
+#grenade-count.empty { color: #ff5d5d; text-shadow: 0 0 8px rgba(255, 60, 60, 0.5); }
 #slots { display: flex; flex-direction: column; gap: 3px; align-items: flex-end; margin-top: 4px; }
 .slot {
   display: flex; gap: 8px; align-items: center;

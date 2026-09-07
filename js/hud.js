@@ -14,6 +14,7 @@ export class HUD {
       reloadBar: $('reload-bar'),
       reloadFill: $('reload-fill'),
       reloadHint: $('reload-hint'),
+      grenadeCount: $('grenade-count'),
       slots: $('slots'),
       wave: $('wave-num'),
       enemies: $('enemies-left'),
@@ -85,6 +86,13 @@ export class HUD {
     if (this._cache.slot !== w.index) {
       this.slotEls.forEach((el, i) => el.classList.toggle('active', i === w.index));
       this._cache.slot = w.index;
+    }
+
+    // grenades
+    if (s.grenades && this._cache.grenades !== s.grenades.count) {
+      this.el.grenadeCount.textContent = s.grenades.count;
+      this.el.grenadeCount.classList.toggle('empty', s.grenades.count === 0);
+      this._cache.grenades = s.grenades.count;
     }
 
     // top panel

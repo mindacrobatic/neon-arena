@@ -133,6 +133,23 @@ export const AudioSys = {
 
   empty() { this.noise({ dur: 0.04, f0: 3200, f1: 2200, peak: 0.18 }); },
 
+  grenadeThrow() {
+    if (!ctx) return;
+    const t = this._t();
+    this.noise({ dur: 0.18, f0: 500, f1: 2600, type: 'bandpass', q: 1.0, peak: 0.3, t0: t });
+    this.tone({ f0: 300, f1: 150, dur: 0.08, type: 'sine', peak: 0.12, t0: t });
+  },
+
+  grenadeBounce(strong) {
+    if (!ctx) return;
+    this.noise({
+      dur: strong ? 0.06 : 0.035,
+      f0: strong ? 1400 : 2400,
+      f1: 400,
+      peak: strong ? 0.3 : 0.15,
+    });
+  },
+
   wave() {
     if (!ctx) return;
     const t = this._t();
