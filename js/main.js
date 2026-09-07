@@ -5,6 +5,7 @@ import { Player } from './player.js';
 import { EnemyManager, ENEMY_TYPES } from './enemies.js';
 import { PickupManager } from './pickups.js';
 import { WeaponSystem } from './weapons.js';
+import { GrenadeSystem } from './grenades.js';
 import { HUD } from './hud.js';
 import { AudioSys } from './audio.js';
 
@@ -90,6 +91,7 @@ const enemies = new EnemyManager(scene, world, effects, {
     game.score += bonus;
     hud.banner(`WAVE ${n} CLEAR   +${bonus}`, 2.6);
     weapons.addAmmo();
+    grenades.addAmmo(1);
     hud.message('SUPPLIES REPLENISHED', 2.5);
   },
 });
@@ -103,6 +105,7 @@ const pickups = new PickupManager(scene, {
   },
   onAmmo() {
     weapons.addAmmo();
+    grenades.addAmmo(1);
     AudioSys.pickup();
     hud.message('AMMO RESUPPLY', 1.4);
   },
@@ -111,6 +114,9 @@ game.pickups = pickups;
 
 const weapons = new WeaponSystem(camera, scene, vmScene, vmCamera, game);
 game.weapons = weapons;
+
+const grenades = new GrenadeSystem(scene, game);
+game.grenades = grenades;
 
 // ---------- state transitions ----------
 function startGame() {
@@ -121,6 +127,7 @@ function startGame() {
   enemies.reset();
   pickups.reset();
   weapons.reset();
+  grenades.reset();
   effects.clear();
   game.state = 'playing';
   hud.showScreen(null);
@@ -190,6 +197,7 @@ window.addEventListener('keydown', e => {
   if (e.repeat) return;
   if (game.state === 'playing') {
     if (e.code === 'KeyR') weapons.reload();
+    if (e.code === 'KeyG') grenades.throwGrenade();
     const m = /^(?:Digit|Numpad)([1-5])$/.exec(e.code);
     if (m) weapons.switchTo(+m[1] - 1);
     if (e.code === 'KeyP') { pauseGame(); if (document.pointerLockElement) document.exitPointerLock(); }
@@ -265,6 +273,7 @@ function updateHud(dt) {
     maxHealth: player.maxHealth,
     alive: player.alive,
     weapon: ws,
+    grenades: grenades.hudState(),
     wave: Math.max(1, enemies.wave),
     enemiesLabel,
     score: game.score,
@@ -286,17 +295,19 @@ renderer.setAnimationLoop(() => {
       player.update(dt);
       enemies.update(dt, player, camera);
       weapons.update(dt);
+      grenades.update(dt);
       pickups.update(dt, player);
       effects.update(dt);
       world.update(t);
       updateHud(dt);
       // Central death check — catches every damage source (enemy fire,
-      // melee, rocket splash / self damage, ...).
+      // melee, rocket splash / self damage, grenades, ...).
       if (!player.alive) beginDeath();
     } else if (game.state === 'dying') {
       game.deathT += dt;
       player.update(dt);
       weapons.update(dt);   // let rockets in flight finish their show
+      grenades.update(dt);  // live grenades still detonate
       enemies.update(dt, player, camera);
       effects.update(dt);
       world.update(t);

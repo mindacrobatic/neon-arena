@@ -30,6 +30,7 @@ python3 -m http.server 8000
 | Fire | Left mouse |
 | Scope zoom (railgun only) | hold Right mouse |
 | Reload | `R` |
+| Throw grenade | `G` |
 | Switch weapon | `1` … `5` or mouse wheel |
 | Pause | `Esc` or `P` |
 
@@ -46,6 +47,13 @@ python3 -m http.server 8000
 Each weapon has its own procedural 3D viewmodel (rendered in a separate scene
 pass so it never clips into walls), recoil spring, muzzle flash + light,
 tracers, headshot multipliers, reload timing and ammo economy.
+
+### Grenades (`G`)
+
+Carried throwables rather than a weapon slot: you deploy with **3** (max 6),
+and each ammo crate or cleared wave adds **+1**. They arc with your movement
+momentum, bounce off walls and crates, blink faster as the 2.2 s fuse burns
+down, then detonate for splash damage — including to you at point-blank range.
 
 ## Gameplay
 
@@ -67,6 +75,7 @@ js/main.js          renderer, game states (menu/playing/dying/paused/gameover), 
 js/world.js         arena: lights, sky, floor, cover, stairs, glowing pylons, spawn points
 js/player.js        mouse look, WASD physics, jump/gravity, step-assist, bob, shake, death cam
 js/weapons.js       5 weapon definitions, viewmodels, hitscan/rockets, reload/switch/zoom
+js/grenades.js      throwable frag grenades (fuse, bounce physics, shared explosion)
 js/enemies.js       3 enemy types, AI (chase/strafe/windup/LOS bursts), waves, projectiles
 js/physics.js       circle-vs-AABB collision, step support, ground snapping (shared)
 js/pickups.js       health/ammo drops
