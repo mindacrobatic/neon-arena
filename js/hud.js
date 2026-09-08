@@ -1,4 +1,4 @@
-import { WEAPON_DEFS } from './weapons.js';
+import { WEAPON_DEFS } from './weapons.js?v=2';
 
 const $ = id => document.getElementById(id);
 
@@ -16,7 +16,7 @@ export class HUD {
       reloadHint: $('reload-hint'),
       grenadeCount: $('grenade-count'),
       slots: $('slots'),
-      wave: $('wave-num'),
+      time: $('time-num'),
       enemies: $('enemies-left'),
       score: $('score-num'),
       kills: $('kills-num'),
@@ -28,10 +28,14 @@ export class HUD {
       lowHealth: $('low-health'),
       scope: $('scope-overlay'),
       dmgLayer: $('dmg-indicators'),
-      screens: { menu: $('menu-screen'), pause: $('pause-screen'), gameover: $('gameover-screen') },
+      screens: { menu: $('menu-screen'), pause: $('pause-screen'), gameover: $('gameover-screen'), victory: $('victory-screen') },
       goScore: $('go-score'),
       goKills: $('go-kills'),
-      goWave: $('go-wave'),
+      goTime: $('go-time'),
+      vScore: $('v-score'),
+      vKills: $('v-kills'),
+      vTime: $('v-time'),
+      vBonus: $('v-bonus'),
     };
     this.msgT = 0;
     this.bannerT = 0;
@@ -43,10 +47,11 @@ export class HUD {
     this.slotEls = [...this.el.slots.querySelectorAll('.slot')];
   }
 
-  bind({ onPlay, onResume, onRestart }) {
+  bind({ onPlay, onResume, onRestart, onRedeploy }) {
     $('btn-play').addEventListener('click', onPlay);
     $('btn-resume').addEventListener('click', onResume);
     $('btn-restart').addEventListener('click', onRestart);
+    $('btn-redeploy').addEventListener('click', onRedeploy);
   }
 
   update(dt, s) {
@@ -96,7 +101,7 @@ export class HUD {
     }
 
     // top panel
-    if (this._cache.wave !== s.wave) { this.el.wave.textContent = s.wave; this._cache.wave = s.wave; }
+    if (this._cache.time !== s.time) { this.el.time.textContent = s.time; this._cache.time = s.time; }
     if (this._cache.enemies !== s.enemiesLabel) { this.el.enemies.textContent = s.enemiesLabel; this._cache.enemies = s.enemiesLabel; }
     if (this._cache.score !== s.score) { this.el.score.textContent = s.score; this._cache.score = s.score; }
     if (this._cache.kills !== s.kills) { this.el.kills.textContent = s.kills; this._cache.kills = s.kills; }
@@ -146,13 +151,19 @@ export class HUD {
   }
 
   showScreen(name, stats) {
-    for (const k of ['menu', 'pause', 'gameover']) {
+    for (const k of ['menu', 'pause', 'gameover', 'victory']) {
       this.el.screens[k].classList.toggle('hidden', k !== name);
     }
     if (name === 'gameover' && stats) {
       this.el.goScore.textContent = stats.score;
       this.el.goKills.textContent = stats.kills;
-      this.el.goWave.textContent = stats.wave;
+      this.el.goTime.textContent = stats.time;
+    }
+    if (name === 'victory' && stats) {
+      this.el.vScore.textContent = stats.score;
+      this.el.vKills.textContent = stats.kills;
+      this.el.vTime.textContent = stats.time;
+      this.el.vBonus.textContent = '+' + stats.bonus;
     }
   }
 }

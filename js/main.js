@@ -1,13 +1,13 @@
 import * as THREE from 'three';
-import { createWorld } from './world.js';
-import { Effects } from './effects.js';
-import { Player } from './player.js';
-import { EnemyManager, ENEMY_TYPES } from './enemies.js';
-import { PickupManager } from './pickups.js';
-import { WeaponSystem } from './weapons.js';
-import { GrenadeSystem } from './grenades.js';
-import { HUD } from './hud.js';
-import { AudioSys } from './audio.js';
+import { createWorld } from './world.js?v=2';
+import { Effects } from './effects.js?v=2';
+import { Player } from './player.js?v=2';
+import { EnemyManager, ENEMY_TYPES } from './enemies.js?v=2';
+import { PickupManager } from './pickups.js?v=2';
+import { WeaponSystem } from './weapons.js?v=2';
+import { GrenadeSystem } from './grenades.js?v=2';
+import { HUD } from './hud.js?v=2';
+import { AudioSys } from './audio.js?v=2';
 
 // ---------- renderer / scenes / cameras ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -27,9 +27,10 @@ const vmCamera = new THREE.PerspectiveCamera(75, window.innerWidth / window.inne
 
 // ---------- game state container ----------
 const game = {
-  state: 'menu', // menu | playing | dying | paused | gameover
+  state: 'menu', // menu | playing | dying | paused | gameover | victory
   score: 0,
   kills: 0,
+  time: 0,       // mission clock (seconds spent in the playing state)
   locked: false,
   deathT: 0,
   audio: AudioSys,
@@ -55,12 +56,18 @@ function angleToSourceDeg(pos) {
 game.hooks.onFire = (def) => {
   player.addAimKick(def.recoil.aim * (0.85 + Math.random() * 0.3), (Math.random() - 0.5) * def.recoil.aim * 0.75);
   player.addShake(def.recoil.shake);
+  // gunfire is audible: unaware enemies within the weapon's noise radius wake up
+  enemies.alertNoise(player.position, def.noise ?? 22);
 };
 game.hooks.onPlayerHurt = (pos) => {
   hud.damageFlash();
   if (pos) hud.damageIndicator(angleToSourceDeg(pos));
   AudioSys.hurt();
 };
+
+// Alarm feedback throttles: one beep per alert burst, one "CONTACT!" toast
+// per engagement (chain alerts fire many onAlert hooks in the same frame).
+let lastAlertSndT = -99, lastContactMsgT = -99;
 
 const enemies = new EnemyManager(scene, world, effects, {
   onPlayerDamage(amount, pos) {
@@ -76,24 +83,18 @@ const enemies = new EnemyManager(scene, world, effects, {
   },
   onKill(enemy) {
     game.kills++;
-    game.score += ENEMY_TYPES[enemy.type].points + (enemies.wave - 1) * 10;
+    game.score += Math.round(ENEMY_TYPES[enemy.type].points * (enemy.tier || 1));
     const pos = enemy.group.position;
     const r = Math.random();
     if (enemy.type === 'heavy' || r < 0.16) pickups.spawn(pos, 'health');
     else if (r < 0.52) pickups.spawn(pos, 'ammo');
   },
-  onWaveStart(n) {
-    hud.banner(`WAVE ${n}`);
-    AudioSys.wave();
+  onAlert() {
+    const t = performance.now() / 1000;
+    if (t - lastAlertSndT > 0.45) { AudioSys.alert(); lastAlertSndT = t; }
+    if (t - lastContactMsgT > 4.5) { hud.message('CONTACT!', 1.3); lastContactMsgT = t; }
   },
-  onWaveComplete(n) {
-    const bonus = 200 * n;
-    game.score += bonus;
-    hud.banner(`WAVE ${n} CLEAR   +${bonus}`, 2.6);
-    weapons.addAmmo();
-    grenades.addAmmo(1);
-    hud.message('SUPPLIES REPLENISHED', 2.5);
-  },
+  onAllCleared() { toVictory(); },
 });
 game.enemies = enemies;
 
@@ -119,19 +120,28 @@ const grenades = new GrenadeSystem(scene, game);
 game.grenades = grenades;
 
 // ---------- state transitions ----------
+function fmtTime(s) {
+  const m = Math.floor(s / 60);
+  return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+}
+
 function startGame() {
   game.score = 0;
   game.kills = 0;
+  game.time = 0;
   game.deathT = 0;
+  lastAlertSndT = -99;
+  lastContactMsgT = -99;
   player.reset();
-  enemies.reset();
+  enemies.reset(world.enemyPlacements);   // every hostile is placed up front
   pickups.reset();
+  for (const pl of world.pickupPlacements) pickups.spawn(pl.pos, pl.kind, true);
   weapons.reset();
   grenades.reset();
   effects.clear();
   game.state = 'playing';
   hud.showScreen(null);
-  hud.message('HOSTILES INBOUND — SURVIVE', 2.5);
+  hud.message('SWEEP THE COMPOUND — ELIMINATE ALL HOSTILES', 3);
 }
 
 function beginDeath() {
@@ -145,7 +155,29 @@ function beginDeath() {
 
 function toGameOver() {
   game.state = 'gameover';
-  hud.showScreen('gameover', { score: game.score, kills: game.kills, wave: enemies.wave });
+  hud.showScreen('gameover', { score: game.score, kills: game.kills, time: fmtTime(game.time) });
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+
+function toVictory() {
+  if (game.state !== 'playing') return; // death takes precedence if it raced us
+  game.state = 'victory';
+  weapons.release();
+  weapons.setZoom(false);
+  // freeze the battlefield: nothing in flight survives the win
+  enemies.clearProjectiles();
+  weapons.clearRockets();
+  grenades.clearLive();
+  const clearBonus = 1000;
+  const timeBonus = Math.max(0, Math.round(1500 - game.time * 6));
+  game.score += clearBonus + timeBonus;
+  AudioSys.victory();
+  hud.showScreen('victory', {
+    score: game.score,
+    kills: game.kills,
+    time: fmtTime(game.time),
+    bonus: clearBonus + timeBonus,
+  });
   if (document.pointerLockElement) document.exitPointerLock();
 }
 
@@ -186,6 +218,7 @@ hud.bind({
   onPlay() { AudioSys.init(); startGame(); requestLock(); },
   onResume() { AudioSys.init(); resumeGame(); },
   onRestart() { startGame(); requestLock(); },
+  onRedeploy() { AudioSys.init(); startGame(); requestLock(); },
 });
 
 // ---------- input ----------
@@ -265,16 +298,14 @@ function updateHud(dt) {
   const ws = weapons.hudState();
   const spreadPx = weapons.currentSpread() *
     (window.innerHeight / 2) / Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
-  const enemiesLabel = enemies.remaining > 0
-    ? String(enemies.remaining)
-    : (enemies.wave === 0 ? '\u2014' : `NEXT ${Math.max(0, Math.ceil(enemies.betweenT))}s`);
+  const enemiesLabel = enemies.total > 0 ? `${enemies.remaining}/${enemies.total}` : '\u2014';
   hud.update(dt, {
     health: player.health,
     maxHealth: player.maxHealth,
     alive: player.alive,
     weapon: ws,
     grenades: grenades.hudState(),
-    wave: Math.max(1, enemies.wave),
+    time: fmtTime(game.time),
     enemiesLabel,
     score: game.score,
     kills: game.kills,
@@ -291,6 +322,7 @@ renderer.setAnimationLoop(() => {
   // killing the animation loop (which looks like a frozen browser).
   try {
     if (game.state === 'playing') {
+      game.time += dt;
       syncInput();
       player.update(dt);
       enemies.update(dt, player, camera);
@@ -323,7 +355,7 @@ renderer.setAnimationLoop(() => {
     vmCamera.aspect = camera.aspect;
     vmCamera.updateProjectionMatrix();
   } catch (err) {
-    console.error('[NEON ARENA] frame error:', err);
+    console.error('[NEON COMPOUND] frame error:', err);
     if (game.state !== 'fatal') {
       game.state = 'fatal';
       weapons.release();

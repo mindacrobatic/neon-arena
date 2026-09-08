@@ -1,4 +1,4 @@
-/* ============ NEON ARENA — HUD & screens ============ */
+/* ============ NEON COMPOUND — HUD & screens ============ */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { width: 100%; height: 100%; overflow: hidden; background: #05050c; }
 body {
@@ -202,10 +202,13 @@ h1 span { color: #ff4dcc; text-shadow: 0 0 30px rgba(255, 77, 204, 0.8); }
 .hint { margin-top: 18px; font-size: 11px; color: #6f8fa5; letter-spacing: 0.1em; }
 h2 { font-size: 38px; letter-spacing: 0.3em; color: #bfe9ff; margin-bottom: 26px; text-shadow: 0 0 22px rgba(80, 200, 255, 0.7); }
 h2.dead { color: #ff5d6e; text-shadow: 0 0 26px rgba(255, 60, 80, 0.8); }
+h2.clear { color: #3dff8e; text-shadow: 0 0 26px rgba(61, 255, 142, 0.8); }
 .stats { display: flex; gap: 38px; justify-content: center; margin-bottom: 30px; }
+#victory-screen .stats { gap: 26px; }
 .stats div { display: flex; flex-direction: column; gap: 4px; }
 .stats .label { font-size: 11px; }
 .stats span:last-child { font-size: 28px; font-weight: 800; color: #eaffff; font-variant-numeric: tabular-nums; }
+#v-bonus { color: #3dff8e; }
 
 /* ---- fatal error overlay ---- */
 #fatal {

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { pointInSolids } from './physics.js';
+import { pointInSolids } from './physics.js?v=2';
 
 /**
  * Throwable frag grenades — a carried ammo type (not a weapon slot).
@@ -13,7 +13,7 @@ import { pointInSolids } from './physics.js';
 export const GRENADE = {
   start: 3,          // grenades on a fresh deploy
   max: 6,            // carry capacity
-  perPickup: 1,      // gained per ammo crate / wave clear
+  perPickup: 1,      // gained per ammo crate
   fuse: 2.2,         // seconds from throw to detonation
   throwSpeed: 17,
   gravity: 22,
@@ -116,9 +116,14 @@ export class GrenadeSystem {
     this.live = [];
   }
 
-  reset() {
+  /** Remove live grenades without detonating (end-of-mission cleanup). */
+  clearLive() {
     for (const g of [...this.live]) g.dispose();
     this.live = [];
+  }
+
+  reset() {
+    this.clearLive();
     this.count = GRENADE.start;
     this.cooldown = 0;
   }
