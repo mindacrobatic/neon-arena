@@ -1,18 +1,21 @@
 import * as THREE from 'three';
-import { collideHorizontal, findStepSupport, findGround, pointInSolids } from './physics.js';
-import { makeGlowTexture } from './effects.js';
+import { collideHorizontal, findStepSupport, findGround, pointInSolids } from './physics.js?v=2';
+import { makeGlowTexture } from './effects.js?v=2';
 
 export const ENEMY_TYPES = {
   grunt: {
     hp: 34, speed: 4.3, damage: 13, kind: 'melee', range: 2.4, attackCd: 1.0,
+    see: 17, hear: 8, chain: 12, leash: 34,
     color: 0xb03a2e, glow: 0xff4422, points: 100, scale: 1.0,
   },
   shooter: {
     hp: 46, speed: 3.2, damage: 9, kind: 'ranged', range: 30, prefMin: 9, prefMax: 18, attackCd: 1.5,
+    see: 32, hear: 9, chain: 13, leash: 44,
     projSpeed: 26, color: 0x7d3c98, glow: 0xcc66ff, points: 150, scale: 1.0,
   },
   heavy: {
     hp: 150, speed: 2.3, damage: 7, kind: 'ranged', range: 34, prefMin: 7, prefMax: 21, attackCd: 2.6,
+    see: 28, hear: 9, chain: 13, leash: 38,
     burst: 3, projSpeed: 22, color: 0x1e8449, glow: 0x66ff88, points: 250, scale: 1.3,
   },
 };
@@ -38,21 +41,43 @@ const _ray = new THREE.Raycaster();
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _v4 = new THREE.Vector3();
 const _q1 = new THREE.Quaternion();
 
+/**
+ * A pre-placed robot guarding the compound.
+ *
+ * Lifecycle: idle (scan) / patrol (walk a loop around its home spot) until it
+ * NOTICES the player — sight (`see` + line of sight), hearing (close range),
+ * gunfire noise, an ally raising the alarm (`chain`), or taking damage.
+ * Once alerted it fights exactly like before (chase/strafe/windup/LOS bursts).
+ * A leash keeps it from chasing across the whole map: past `leash` metres from
+ * home it disengages and walks back, becoming idle again.
+ */
 class Enemy {
-  constructor(type, pos, wave, manager) {
+  constructor(type, pos, manager, opts = {}) {
     const def = ENEMY_TYPES[type];
     this.type = type;
     this.def = def;
     this.manager = manager;
+    this.tier = opts.tier ?? 1;
     this.baseScale = def.scale;
-    this.maxHp = def.hp * (1 + (wave - 1) * 0.14);
+    this.maxHp = def.hp * (1 + (this.tier - 1) * 0.14);
     this.hp = this.maxHp;
-    this.attackDamage = def.damage * (1 + (wave - 1) * 0.07);
-    this.speed = def.speed * (1 + Math.min(0.35, (wave - 1) * 0.02));
+    this.attackDamage = def.damage * (1 + (this.tier - 1) * 0.07);
+    this.speed = def.speed * (1 + Math.min(0.2, (this.tier - 1) * 0.04));
     this.radius = 0.42 * def.scale;
     this.height = 1.9 * def.scale;
 
-    this.state = 'spawn'; // spawn | chase | dying
+    // guard / patrol setup
+    this.home = pos.clone();
+    this.patrolRadius = opts.patrol ?? 0;
+    this.alerted = false;
+    this.returning = false;
+    this.perceptT = 0.3 + Math.random() * 0.5;
+    this.patrolTarget = null;
+    this.patrolWait = 0.6 + Math.random() * 2.2;
+    this.scanPhase = Math.random() * Math.PI * 2;
+    this.baseYaw = opts.yaw ?? Math.random() * Math.PI * 2;
+
+    this.state = 'idle'; // idle | dying
     this.t = 0;
     this.attackT = def.attackCd * (0.4 + Math.random() * 0.6);
     this.windT = 0;
@@ -73,7 +98,8 @@ class Enemy {
 
     this.group = new THREE.Group();
     this.group.position.copy(pos);
-    this.group.scale.setScalar(0.01);
+    this.group.scale.setScalar(def.scale); // fully present from the start
+    this.group.rotation.y = this.baseYaw;
 
     const body = new THREE.MeshStandardMaterial({ color: def.color, roughness: 0.45, metalness: 0.55 });
     const dark = new THREE.MeshStandardMaterial({ color: 0x23232c, roughness: 0.6, metalness: 0.4 });
@@ -108,9 +134,10 @@ class Enemy {
     }
     this.hitMeshes = [this.legL, this.legR, this.torso, this.head, this.armL, this.armR, this.shL, this.shR];
 
-    // floating health bar (billboarded)
+    // floating health bar (billboarded) — hidden until the enemy is alerted
     this.hpBar = new THREE.Object3D();
     this.hpBar.position.set(0, 2.42, 0);
+    this.hpBar.visible = false;
     const bgMat = new THREE.MeshBasicMaterial({ color: 0x0a0a12, transparent: true, opacity: 0.75, depthWrite: false });
     this.hpFillMat = new THREE.MeshBasicMaterial({ color: 0x44ff66, transparent: true, opacity: 0.95, depthWrite: false });
     const bgGeo = new THREE.PlaneGeometry(0.95, 0.11);
@@ -128,8 +155,19 @@ class Enemy {
     manager.scene.add(this.group);
   }
 
+  /** Switch to combat. Idempotent; called by the manager (with ally chaining). */
+  activate() {
+    if (this.alerted || this.state === 'dying') return;
+    this.alerted = true;
+    this.returning = false;
+    this.t = 0;
+    this.flash = Math.max(this.flash, 0.85); // brief glow flare — "it saw me"
+    this.hpBar.visible = true;
+  }
+
   damage(amount) {
     if (this.state === 'dying') return false;
+    this.manager.alertEnemy(this); // getting shot wakes the whole group
     this.hp -= amount;
     this.flash = 1;
     if (this.hp <= 0) { this.die(); return true; }
@@ -174,6 +212,19 @@ class Enemy {
     ctx.fireProjectile(_v1, _v2, this);
   }
 
+  /** Random reachable point inside the patrol circle around `home`. */
+  pickPatrolTarget(ctx) {
+    const gp = this.group.position;
+    for (let i = 0; i < 8; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = this.patrolRadius * (0.3 + Math.random() * 0.7);
+      _v1.set(this.home.x + Math.cos(a) * r, gp.y + 0.9, this.home.z + Math.sin(a) * r);
+      if (Math.abs(_v1.x) > ctx.arenaHalf - 0.8 || Math.abs(_v1.z) > ctx.arenaHalf - 0.8) continue;
+      if (!pointInSolids(_v1, ctx.solids, 0.45)) { this.patrolTarget = _v1.clone(); return; }
+    }
+    this.patrolTarget = this.home.clone();
+  }
+
   updateBar(ctx) {
     const frac = Math.max(0, this.hp / this.maxHp);
     this.hpFill.scale.x = Math.max(frac, 0.001);
@@ -188,21 +239,6 @@ class Enemy {
     this.bodyMat.emissive.setScalar(this.flash * 0.9);
     this.glowMat.emissiveIntensity = 2.0 + Math.sin(ctx.time * 6 + this.seed) * 0.5 + this.flash * 4;
 
-    // ---- materializing ----
-    if (this.state === 'spawn') {
-      const k = Math.min(1, this.t / 0.55);
-      const s = this.baseScale * (1 - Math.pow(1 - k, 3));
-      this.group.scale.setScalar(Math.max(0.01, s));
-      this.glowMat.emissiveIntensity = 2 + (1 - k) * 7;
-      if (k >= 1) {
-        this.state = 'chase';
-        this.t = 0;
-        this.group.scale.setScalar(this.baseScale);
-      }
-      this.updateBar(ctx);
-      return;
-    }
-
     // ---- dying: topple, sink, fade ----
     if (this.state === 'dying') {
       const k = Math.min(1, this.t / 0.45);
@@ -215,30 +251,84 @@ class Enemy {
       return;
     }
 
-    // ---- chase / attack ----
     const gp = this.group.position;
     const pp = ctx.player.position;
     const dx = pp.x - gp.x, dz = pp.z - gp.z;
     const dy = pp.y - gp.y;
     const dist = Math.hypot(dx, dz) || 0.001;
+
+    // ---- perception while unaware (throttled LOS raycasts) ----
+    if (!this.alerted) {
+      this.perceptT -= dt;
+      if (this.perceptT <= 0) {
+        this.perceptT = 0.16 + Math.random() * 0.1;
+        if (ctx.player.alive && (dist < this.def.hear || (dist < this.def.see && this.hasLOS(ctx)))) {
+          this.manager.alertEnemy(this);
+        }
+      }
+    }
+
     const nx = dx / dist, nz = dz / dist;
     let moveX = 0, moveZ = 0, wantMove = false;
+    let faceYaw = null;
+    let speedMul = 1;
 
     this.strafeT -= dt;
     if (this.strafeT <= 0) { this.strafeDir *= -1; this.strafeT = 1.6 + Math.random() * 2.2; }
 
-    if (ctx.player.alive) {
-      if (this.wanderT > 0) {
-        this.wanderT -= dt;
-        moveX = -nz * this.wanderDir + nx * 0.35;
-        moveZ = nx * this.wanderDir + nz * 0.35;
-        wantMove = true;
-      } else if (this.def.kind === 'melee') {
-        if (dist > this.def.range * 0.85) { moveX = nx; moveZ = nz; wantMove = true; }
+    if (this.alerted) {
+      const homeD = Math.hypot(gp.x - this.home.x, gp.z - this.home.z);
+      if (!this.returning && homeD > this.def.leash) this.returning = true;
+      if (this.returning) {
+        // disengaged: walk home, ignore the player
+        if (homeD < 1.6) {
+          this.returning = false;
+          this.alerted = false;
+          this.patrolTarget = null;
+          this.patrolWait = 1.0 + Math.random() * 1.5;
+          if (this.hp >= this.maxHp) this.hpBar.visible = false; // back at ease
+        } else {
+          moveX = (this.home.x - gp.x) / homeD;
+          moveZ = (this.home.z - gp.z) / homeD;
+          wantMove = true;
+          faceYaw = Math.atan2(moveX, moveZ);
+        }
+      } else if (ctx.player.alive) {
+        if (this.wanderT > 0) {
+          this.wanderT -= dt;
+          moveX = -nz * this.wanderDir + nx * 0.35;
+          moveZ = nx * this.wanderDir + nz * 0.35;
+          wantMove = true;
+        } else if (this.def.kind === 'melee') {
+          if (dist > this.def.range * 0.85) { moveX = nx; moveZ = nz; wantMove = true; }
+        } else {
+          if (dist > this.def.prefMax) { moveX = nx; moveZ = nz; wantMove = true; }
+          else if (dist < this.def.prefMin) { moveX = -nx; moveZ = -nz; wantMove = true; }
+          else { moveX = -nz * this.strafeDir; moveZ = nx * this.strafeDir; wantMove = true; }
+        }
+      }
+    } else {
+      // ---- idle guard / patrol ----
+      speedMul = 0.42;
+      const scanYaw = this.baseYaw + Math.sin(ctx.time * 0.5 + this.scanPhase) * 0.8;
+      if (this.patrolRadius > 0) {
+        if (this.patrolWait > 0) {
+          this.patrolWait -= dt;
+          faceYaw = scanYaw; // pause and scan at the waypoint
+        } else {
+          if (!this.patrolTarget) this.pickPatrolTarget(ctx);
+          const tx = this.patrolTarget.x - gp.x, tz = this.patrolTarget.z - gp.z;
+          const td = Math.hypot(tx, tz);
+          if (td < 0.7) {
+            this.patrolTarget = null;
+            this.patrolWait = 1.4 + Math.random() * 2.8;
+          } else {
+            moveX = tx / td; moveZ = tz / td; wantMove = true;
+            faceYaw = Math.atan2(moveX, moveZ);
+          }
+        }
       } else {
-        if (dist > this.def.prefMax) { moveX = nx; moveZ = nz; wantMove = true; }
-        else if (dist < this.def.prefMin) { moveX = -nx; moveZ = -nz; wantMove = true; }
-        else { moveX = -nz * this.strafeDir; moveZ = nx * this.strafeDir; wantMove = true; }
+        faceYaw = scanYaw;
       }
     }
 
@@ -256,17 +346,18 @@ class Enemy {
       }
     }
 
-    // movement with collision + step assist + stuck wandering
+    // movement with collision + step assist + stuck handling
     this.moving = false;
+    const effSpeed = this.speed * speedMul;
     const ml = Math.hypot(moveX, moveZ);
     if (ml > 0.01) {
       moveX /= ml; moveZ /= ml;
       const bx = gp.x, bz = gp.z;
-      gp.x += moveX * this.speed * dt;
-      gp.z += moveZ * this.speed * dt;
+      gp.x += moveX * effSpeed * dt;
+      gp.z += moveZ * effSpeed * dt;
       const blocked = collideHorizontal(gp, this.radius, gp.y + 0.05, this.height * 0.9, ctx.solids);
       if (blocked) {
-        _v4.set(bx + moveX * this.speed * dt, gp.y, bz + moveZ * this.speed * dt);
+        _v4.set(bx + moveX * effSpeed * dt, gp.y, bz + moveZ * effSpeed * dt);
         const stepY = findStepSupport(_v4, this.radius, this.height, gp.y, ctx.solids);
         if (stepY !== null) {
           gp.y = stepY;
@@ -275,13 +366,20 @@ class Enemy {
         }
       }
       const movedSq = (gp.x - bx) * (gp.x - bx) + (gp.z - bz) * (gp.z - bz);
-      const want = this.speed * dt;
+      const want = effSpeed * dt;
       if (movedSq < want * want * 0.16) this.stuckT += dt;
       else this.stuckT = Math.max(0, this.stuckT - dt * 2);
-      if (this.stuckT > 0.85 && this.wanderT <= 0) {
-        this.wanderT = 0.7 + Math.random() * 0.7;
-        this.wanderDir = Math.random() < 0.5 ? 1 : -1;
+      if (this.stuckT > 0.85) {
         this.stuckT = 0;
+        if (this.alerted) {
+          if (this.wanderT <= 0) {
+            this.wanderT = 0.7 + Math.random() * 0.7;
+            this.wanderDir = Math.random() < 0.5 ? 1 : -1;
+          }
+        } else {
+          this.patrolTarget = null;             // unreachable waypoint: pick another
+          this.patrolWait = 0.4 + Math.random() * 0.6;
+        }
       }
       this.moving = movedSq > 1e-8;
     } else if (wantMove) {
@@ -301,97 +399,97 @@ class Enemy {
     gp.x = THREE.MathUtils.clamp(gp.x, -B, B);
     gp.z = THREE.MathUtils.clamp(gp.z, -B, B);
 
-    // face the player
-    if (ctx.player.alive) {
-      const targetYaw = Math.atan2(dx, dz);
-      let da = targetYaw - this.group.rotation.y;
-      while (da > Math.PI) da -= Math.PI * 2;
-      while (da < -Math.PI) da += Math.PI * 2;
-      this.group.rotation.y += da * (1 - Math.exp(-10 * dt));
-    }
+    // facing: player when fighting, movement/scan direction otherwise
+    const targetYaw = (this.alerted && !this.returning && ctx.player.alive)
+      ? Math.atan2(dx, dz)
+      : (faceYaw !== null ? faceYaw : this.group.rotation.y);
+    let da = targetYaw - this.group.rotation.y;
+    while (da > Math.PI) da -= Math.PI * 2;
+    while (da < -Math.PI) da += Math.PI * 2;
+    this.group.rotation.y += da * (1 - Math.exp(-(this.alerted ? 10 : 7) * dt));
 
     // walk animation
-    if (this.moving) this.phase += dt * this.speed * 2.3;
+    if (this.moving) this.phase += dt * effSpeed * 2.3;
     const sw = this.moving ? Math.sin(this.phase) * 0.62 : 0;
     this.legL.rotation.x = sw;
     this.legR.rotation.x = -sw;
 
-    // attacks
-    if (this.def.kind === 'melee') {
-      this.attackT -= dt;
-      if (this.windT > 0) {
-        this.windT -= dt;
-        this.armR.rotation.x = THREE.MathUtils.damp(this.armR.rotation.x, -2.5, 20, dt);
-        this.armL.rotation.x = THREE.MathUtils.damp(this.armL.rotation.x, -sw * 0.6, 10, dt);
-        if (this.windT <= 0) {
-          this.swingT = 0.3;
-          if (ctx.player.alive && dist < this.def.range + 0.9 && Math.abs(dy) < 1.7) {
-            ctx.damagePlayer(this.attackDamage, gp);
+    if (this.alerted && !this.returning) {
+      // ---- attacks ----
+      if (this.def.kind === 'melee') {
+        this.attackT -= dt;
+        if (this.windT > 0) {
+          this.windT -= dt;
+          this.armR.rotation.x = THREE.MathUtils.damp(this.armR.rotation.x, -2.5, 20, dt);
+          this.armL.rotation.x = THREE.MathUtils.damp(this.armL.rotation.x, -sw * 0.6, 10, dt);
+          if (this.windT <= 0) {
+            this.swingT = 0.3;
+            if (ctx.player.alive && dist < this.def.range + 0.9 && Math.abs(dy) < 1.7) {
+              ctx.damagePlayer(this.attackDamage, gp);
+            }
+          }
+        } else if (this.swingT > 0) {
+          this.swingT -= dt;
+          this.armR.rotation.x = THREE.MathUtils.damp(this.armR.rotation.x, -0.2, 24, dt);
+          this.armL.rotation.x = THREE.MathUtils.damp(this.armL.rotation.x, sw * 0.6, 10, dt);
+        } else {
+          this.armR.rotation.x = THREE.MathUtils.damp(this.armR.rotation.x, sw * 0.6, 10, dt);
+          this.armL.rotation.x = THREE.MathUtils.damp(this.armL.rotation.x, -sw * 0.6, 10, dt);
+          if (this.attackT <= 0 && ctx.player.alive && dist < this.def.range && Math.abs(dy) < 1.7) {
+            this.windT = 0.32;
+            this.attackT = this.def.attackCd;
           }
         }
-      } else if (this.swingT > 0) {
-        this.swingT -= dt;
-        this.armR.rotation.x = THREE.MathUtils.damp(this.armR.rotation.x, -0.2, 24, dt);
-        this.armL.rotation.x = THREE.MathUtils.damp(this.armL.rotation.x, sw * 0.6, 10, dt);
       } else {
+        this.attackT -= dt;
+        if (this.burst > 0) {
+          this.burstT -= dt;
+          if (this.burstT <= 0) {
+            this.burst--;
+            this.burstT = 0.16;
+            if (this.hasLOS(ctx)) this.fire(ctx, dist);
+          }
+        }
+        if (this.attackT <= 0 && ctx.player.alive && dist < this.def.range) {
+          if (this.hasLOS(ctx)) {
+            this.fire(ctx, dist);
+            if (this.def.burst) { this.burst = this.def.burst - 1; this.burstT = 0.16; }
+            this.attackT = this.def.attackCd * (0.85 + Math.random() * 0.3);
+          } else {
+            this.attackT = 0.25;
+          }
+        }
+        this.armR.rotation.x = -Math.PI / 2 * 0.95;
+        this.armL.rotation.x = THREE.MathUtils.damp(
+          this.armL.rotation.x,
+          -0.3 + (this.moving ? Math.sin(this.phase * 0.7) * 0.15 : 0),
+          8, dt
+        );
+      }
+      this.updateBar(ctx);
+    } else {
+      // ---- at ease (or disengaged): arms follow the walk, weapon stays ready ----
+      if (this.alerted) this.updateBar(ctx); // keep billboarding while returning home
+      if (this.def.kind === 'melee') {
         this.armR.rotation.x = THREE.MathUtils.damp(this.armR.rotation.x, sw * 0.6, 10, dt);
         this.armL.rotation.x = THREE.MathUtils.damp(this.armL.rotation.x, -sw * 0.6, 10, dt);
-        if (this.attackT <= 0 && ctx.player.alive && dist < this.def.range && Math.abs(dy) < 1.7) {
-          this.windT = 0.32;
-          this.attackT = this.def.attackCd;
-        }
+      } else {
+        this.armR.rotation.x = -Math.PI / 2 * 0.95;
+        this.armL.rotation.x = THREE.MathUtils.damp(
+          this.armL.rotation.x,
+          -0.3 + (this.moving ? Math.sin(this.phase * 0.7) * 0.15 : 0),
+          8, dt
+        );
       }
-    } else {
-      this.attackT -= dt;
-      if (this.burst > 0) {
-        this.burstT -= dt;
-        if (this.burstT <= 0) {
-          this.burst--;
-          this.burstT = 0.16;
-          if (this.hasLOS(ctx)) this.fire(ctx, dist);
-        }
-      }
-      if (this.attackT <= 0 && ctx.player.alive && dist < this.def.range) {
-        if (this.hasLOS(ctx)) {
-          this.fire(ctx, dist);
-          if (this.def.burst) { this.burst = this.def.burst - 1; this.burstT = 0.16; }
-          this.attackT = this.def.attackCd * (0.85 + Math.random() * 0.3);
-        } else {
-          this.attackT = 0.25;
-        }
-      }
-      this.armR.rotation.x = -Math.PI / 2 * 0.95;
-      this.armL.rotation.x = THREE.MathUtils.damp(
-        this.armL.rotation.x,
-        -0.3 + (this.moving ? Math.sin(this.phase * 0.7) * 0.15 : 0),
-        8, dt
-      );
     }
-
-    this.updateBar(ctx);
   }
-}
-
-function waveComposition(n) {
-  const count = Math.min(26, Math.round(4 + n * 2.2));
-  if (n === 1) return new Array(count).fill('grunt');
-  const wg = 6;
-  const ws = n >= 2 ? 2.2 + n * 0.35 : 0;
-  const wh = n >= 3 ? Math.min(3.5, (n - 2) * 0.7) : 0;
-  const total = wg + ws + wh;
-  const out = [];
-  for (let i = 0; i < count; i++) {
-    let r = Math.random() * total;
-    if ((r -= wg) <= 0) out.push('grunt');
-    else if ((r -= ws) <= 0) out.push('shooter');
-    else out.push('heavy');
-  }
-  return out;
 }
 
 /**
- * Spawns waves, updates all enemies + enemy projectiles,
- * and is the single entry point for damaging enemies.
+ * Owns all pre-placed enemies + enemy projectiles, drives the shared update
+ * context, and runs the alarm system: when one enemy notices you, nearby
+ * allies are alerted too; gunfire and explosions alert by radius.
+ * Also the single entry point for damaging enemies.
  */
 export class EnemyManager {
   constructor(scene, world, effects, hooks) {
@@ -401,35 +499,57 @@ export class EnemyManager {
     this.hooks = hooks || {};
     this.enemies = [];
     this.projectiles = [];
-    this.wave = 0;
-    this.spawnQueue = [];
-    this.spawnT = 0;
-    this.betweenT = 2.0;
-    this.active = false;
+    this.total = 0;
+    this.cleared = false;
   }
 
-  get remaining() { return this.enemies.length + this.spawnQueue.length; }
+  get remaining() { return this.enemies.length; }
 
-  reset() {
+  /** Deploy a fresh set of enemies from level placements. */
+  reset(placements = []) {
     for (const e of [...this.enemies]) this.remove(e);
+    this.clearProjectiles();
+    this.total = 0;
+    this.cleared = false;
+    for (const pl of placements) {
+      this.enemies.push(new Enemy(pl.type, pl.pos.clone(), this, {
+        patrol: pl.patrol, tier: pl.tier, yaw: pl.yaw,
+      }));
+    }
+    this.total = this.enemies.length;
+  }
+
+  clearProjectiles() {
     for (const p of this.projectiles) {
       this.scene.remove(p.mesh);
       p.mat.dispose();
       p.sprMat.dispose();
     }
     this.projectiles = [];
-    this.wave = 0;
-    this.spawnQueue = [];
-    this.active = false;
-    this.betweenT = 2.0;
   }
 
-  startWave(n) {
-    this.wave = n;
-    this.spawnQueue = waveComposition(n);
-    this.spawnT = 0.6;
-    this.active = true;
-    this.hooks.onWaveStart?.(n);
+  /** Primary alarm: activate one enemy, then chain to nearby unaware allies. */
+  alertEnemy(e) {
+    if (e.state === 'dying' || e.alerted) return;
+    e.activate();
+    this.hooks.onAlert?.(e);
+    const ep = e.group.position;
+    const r = e.def.chain ?? 12;
+    for (const o of this.enemies) {
+      if (o === e || o.state === 'dying' || o.alerted) continue;
+      const op = o.group.position;
+      const d = Math.hypot(op.x - ep.x, op.y - ep.y, op.z - ep.z);
+      if (d < r) o.activate();
+    }
+  }
+
+  /** Noise alarm (gunfire, explosions): alert everyone within `radius`. */
+  alertNoise(pos, radius) {
+    for (const e of this.enemies) {
+      if (e.state === 'dying' || e.alerted) continue;
+      const ep = e.group.position;
+      if (Math.hypot(ep.x - pos.x, ep.z - pos.z) < radius) this.alertEnemy(e);
+    }
   }
 
   remove(e) {
@@ -439,14 +559,6 @@ export class EnemyManager {
     e.barGeos.forEach(g => g.dispose());
     const i = this.enemies.indexOf(e);
     if (i >= 0) this.enemies.splice(i, 1);
-  }
-
-  spawnOne(type, player) {
-    const pts = this.world.spawnPoints;
-    const far = pts.filter(p => p.distanceTo(player.position) > 18);
-    const pool = far.length ? far : pts;
-    const pt = pool[(Math.random() * pool.length) | 0];
-    this.enemies.push(new Enemy(type, pt.clone(), this.wave, this));
   }
 
   spawnProjectile(from, aim, enemy) {
@@ -475,24 +587,6 @@ export class EnemyManager {
   }
 
   update(dt, player, camera) {
-    // wave flow
-    if (this.active) {
-      if (this.spawnQueue.length > 0) {
-        this.spawnT -= dt;
-        if (this.spawnT <= 0) {
-          this.spawnOne(this.spawnQueue.shift(), player);
-          this.spawnT = 0.55;
-        }
-      } else if (this.enemies.length === 0) {
-        this.active = false;
-        this.betweenT = 4.5;
-        this.hooks.onWaveComplete?.(this.wave);
-      }
-    } else {
-      this.betweenT -= dt;
-      if (this.betweenT <= 0) this.startWave(this.wave + 1);
-    }
-
     const ctx = {
       player, camera,
       solids: this.world.solids,
@@ -504,6 +598,12 @@ export class EnemyManager {
     };
     for (let i = this.enemies.length - 1; i >= 0; i--) this.enemies[i].update(dt, ctx);
     this.updateProjectiles(dt, player);
+
+    // sector cleared — every placed enemy is down and faded out
+    if (!this.cleared && this.total > 0 && this.enemies.length === 0) {
+      this.cleared = true;
+      this.hooks.onAllCleared?.();
+    }
   }
 
   updateProjectiles(dt, player) {

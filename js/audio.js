@@ -150,12 +150,22 @@ export const AudioSys = {
     });
   },
 
-  wave() {
+  alert() {
+    // enemy spotted you — sharp rising two-tone
     if (!ctx) return;
     const t = this._t();
-    this.tone({ f0: 330, dur: 0.16, type: 'triangle', peak: 0.28, t0: t });
-    this.tone({ f0: 415, dur: 0.16, type: 'triangle', peak: 0.28, t0: t + 0.16 });
-    this.tone({ f0: 494, dur: 0.3, type: 'triangle', peak: 0.3, t0: t + 0.32 });
+    this.tone({ f0: 660, dur: 0.08, type: 'square', peak: 0.15, t0: t });
+    this.tone({ f0: 990, dur: 0.12, type: 'square', peak: 0.15, t0: t + 0.085 });
+  },
+
+  victory() {
+    if (!ctx) return;
+    const t = this._t();
+    this.tone({ f0: 392, dur: 0.16, type: 'triangle', peak: 0.3, t0: t });
+    this.tone({ f0: 523, dur: 0.16, type: 'triangle', peak: 0.3, t0: t + 0.15 });
+    this.tone({ f0: 659, dur: 0.18, type: 'triangle', peak: 0.32, t0: t + 0.3 });
+    this.tone({ f0: 784, dur: 0.55, type: 'triangle', peak: 0.34, t0: t + 0.46 });
+    this.tone({ f0: 1046, dur: 0.55, type: 'sine', peak: 0.16, t0: t + 0.46 });
   },
 
   gameover() {

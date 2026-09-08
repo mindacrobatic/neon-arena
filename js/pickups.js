@@ -1,10 +1,11 @@
 import * as THREE from 'three';
-import { makeGlowTexture } from './effects.js';
+import { makeGlowTexture } from './effects.js?v=2';
 
 const glowTex = makeGlowTexture();
 
 /**
- * Spinning health / ammo drops with a limited lifetime.
+ * Spinning health / ammo drops. Kill drops expire after a while; supplies
+ * placed around the compound at deploy time are permanent (`permanent`).
  */
 export class PickupManager {
   constructor(scene, hooks) {
@@ -13,7 +14,7 @@ export class PickupManager {
     this.items = [];
   }
 
-  spawn(pos, kind) {
+  spawn(pos, kind, permanent = false) {
     const g = new THREE.Group();
     let spriteColor;
     if (kind === 'health') {
@@ -46,9 +47,13 @@ export class PickupManager {
     sprite.scale.setScalar(1.6);
     g.add(sprite);
     g.traverse(o => { if (o.isMesh) o.castShadow = true; });
-    g.position.set(pos.x, 0.55, pos.z);
+    const baseY = pos.y ?? 0;
+    g.position.set(pos.x, baseY + 0.55, pos.z);
     this.scene.add(g);
-    this.items.push({ group: g, kind, t: Math.random() * 6, life: 26, sprite });
+    this.items.push({
+      group: g, kind, t: Math.random() * 6, baseY, sprite,
+      life: permanent ? Infinity : 26,
+    });
   }
 
   update(dt, player) {
@@ -56,7 +61,7 @@ export class PickupManager {
       const it = this.items[i];
       it.t += dt;
       it.group.rotation.y += dt * 2.2;
-      it.group.position.y = 0.55 + Math.sin(it.t * 2.6) * 0.12;
+      it.group.position.y = it.baseY + 0.55 + Math.sin(it.t * 2.6) * 0.12;
       const dx = it.group.position.x - player.position.x;
       const dz = it.group.position.z - player.position.z;
       const dy = it.group.position.y - (player.position.y + 0.8);

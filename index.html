@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>NEON ARENA — Three.js FPS</title>
+<title>NEON COMPOUND — Three.js FPS</title>
 <link rel="stylesheet" href="css/style.css" />
 <script type="importmap">
 {
@@ -20,7 +20,7 @@
     if (!el) return;
     el.style.display = 'flex';
     el.textContent =
-      '\u26A0  NEON ARENA failed to start.\n\n' +
+      '\u26A0  NEON COMPOUND failed to start.\n\n' +
       (ev && ev.message ? ev.message + '\n\n' : '') +
       'three.js is loaded from the unpkg CDN - check your internet connection.\n' +
       'Also make sure the game is served over HTTP, e.g.:\n\n' +
@@ -52,7 +52,7 @@
   <div id="msg"></div>
 
   <div id="top-left" class="panel">
-    <div class="row"><span class="label">WAVE</span><span id="wave-num">&mdash;</span></div>
+    <div class="row"><span class="label">TIME</span><span id="time-num">0:00</span></div>
     <div class="row"><span class="label">HOSTILES</span><span id="enemies-left">&mdash;</span></div>
     <div class="row"><span class="label">SCORE</span><span id="score-num">0</span></div>
     <div class="row"><span class="label">KILLS</span><span id="kills-num">0</span></div>
@@ -77,8 +77,8 @@
 
 <div id="menu-screen" class="screen">
   <div class="screen-box">
-    <h1>NEON <span>ARENA</span></h1>
-    <p class="tagline">Endless waves &middot; Five weapons &middot; Zero mercy</p>
+    <h1>NEON <span>COMPOUND</span></h1>
+    <p class="tagline">Explore the compound &middot; Every hostile is already out there &middot; Clear the sector</p>
     <div class="controls-grid">
       <b>W A S D</b><span>Move</span>
       <b>SHIFT</b><span>Sprint</span>
@@ -109,14 +109,27 @@
     <div class="stats">
       <div><span class="label">SCORE</span><span id="go-score">0</span></div>
       <div><span class="label">KILLS</span><span id="go-kills">0</span></div>
-      <div><span class="label">WAVE</span><span id="go-wave">0</span></div>
+      <div><span class="label">TIME</span><span id="go-time">0:00</span></div>
     </div>
     <button id="btn-restart" class="btn">REDEPLOY</button>
   </div>
 </div>
 
+<div id="victory-screen" class="screen hidden">
+  <div class="screen-box">
+    <h2 class="clear">SECTOR CLEARED</h2>
+    <div class="stats">
+      <div><span class="label">SCORE</span><span id="v-score">0</span></div>
+      <div><span class="label">KILLS</span><span id="v-kills">0</span></div>
+      <div><span class="label">TIME</span><span id="v-time">0:00</span></div>
+      <div><span class="label">CLEAR BONUS</span><span id="v-bonus">+0</span></div>
+    </div>
+    <button id="btn-redeploy" class="btn">REDEPLOY</button>
+  </div>
+</div>
+
 <div id="fatal"></div>
 
-<script type="module" src="js/main.js"></script>
+<script type="module" src="js/main.js?v=2"></script>
 </body>
 </html>

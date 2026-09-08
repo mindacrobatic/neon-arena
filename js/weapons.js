@@ -1,15 +1,16 @@
 import * as THREE from 'three';
-import { pointInSolids } from './physics.js';
-import { makeGlowTexture } from './effects.js';
+import { pointInSolids } from './physics.js?v=2';
+import { makeGlowTexture } from './effects.js?v=2';
 
 /**
  * The five weapons. `kind` is either 'hitscan' (instant raycast bullets)
- * or 'projectile' (rocket with splash damage).
+ * or 'projectile' (rocket with splash damage). `noise` is how far (in metres)
+ * a shot alerts unaware enemies — the compound hears you pull the trigger.
  */
 export const WEAPON_DEFS = [
   {
     id: 'pistol', name: 'M9 SIDEARM', short: 'M9', kind: 'hitscan', auto: false,
-    fireDelay: 0.16, damage: 26, pellets: 1, range: 220,
+    fireDelay: 0.16, damage: 26, pellets: 1, range: 220, noise: 16,
     magSize: 12, reserveStart: Infinity, reserveMax: Infinity, reloadTime: 1.15, ammoPick: 0,
     spread: 0.0032, bloomPerShot: 0.005, bloomMax: 0.022,
     recoil: { aim: 0.011, view: 2.2, shake: 0.05 },
@@ -18,7 +19,7 @@ export const WEAPON_DEFS = [
   },
   {
     id: 'smg', name: 'VIPER SMG', short: 'VIPER', kind: 'hitscan', auto: true,
-    fireDelay: 0.068, damage: 13, pellets: 1, range: 170,
+    fireDelay: 0.068, damage: 13, pellets: 1, range: 170, noise: 21,
     magSize: 32, reserveStart: 160, reserveMax: 280, reloadTime: 1.5, ammoPick: 90,
     spread: 0.011, bloomPerShot: 0.0055, bloomMax: 0.05,
     recoil: { aim: 0.005, view: 1.5, shake: 0.028 },
@@ -27,7 +28,7 @@ export const WEAPON_DEFS = [
   },
   {
     id: 'tesla', name: 'ARC-9 TESLA GUN', short: 'ARC-9', kind: 'hitscan', auto: true,
-    fireDelay: 0.13, damage: 20, pellets: 1, range: 85,
+    fireDelay: 0.13, damage: 20, pellets: 1, range: 85, noise: 17,
     magSize: 24, reserveStart: 120, reserveMax: 240, reloadTime: 1.55, ammoPick: 60,
     spread: 0.008, bloomPerShot: 0.004, bloomMax: 0.035,
     recoil: { aim: 0.007, view: 1.6, shake: 0.05 },
@@ -37,7 +38,7 @@ export const WEAPON_DEFS = [
   },
   {
     id: 'sniper', name: 'LONGVIEW RAILGUN', short: 'LONGVIEW', kind: 'hitscan', auto: false,
-    fireDelay: 1.05, damage: 130, pellets: 1, range: 400, zoomFov: 20,
+    fireDelay: 1.05, damage: 130, pellets: 1, range: 400, zoomFov: 20, noise: 34,
     magSize: 5, reserveStart: 20, reserveMax: 35, reloadTime: 2.3, ammoPick: 8,
     spread: 0.0004, bloomPerShot: 0.02, bloomMax: 0.045,
     recoil: { aim: 0.055, view: 7, shake: 0.3 },
@@ -46,7 +47,7 @@ export const WEAPON_DEFS = [
   },
   {
     id: 'rocket', name: 'HELLFIRE RPG', short: 'HELLFIRE', kind: 'projectile', auto: false,
-    fireDelay: 1.25, magSize: 3, reserveStart: 6, reserveMax: 15, reloadTime: 2.6, ammoPick: 3,
+    fireDelay: 1.25, magSize: 3, reserveStart: 6, reserveMax: 15, reloadTime: 2.6, ammoPick: 3, noise: 24,
     spread: 0.0015, bloomPerShot: 0, bloomMax: 0,
     recoil: { aim: 0.02, view: 8, shake: 0.38 },
     flashSize: 0.42, accent: 0xff5544,
@@ -305,13 +306,18 @@ export class WeaponSystem {
 
   get current() { return this.entries[this.index]; }
 
+  /** Dispose rockets in flight without detonating them (end-of-mission cleanup). */
+  clearRockets() {
+    for (const r of this.rockets) r.dispose();
+    this.rockets = [];
+  }
+
   reset() {
     for (const e of this.entries) {
       e.mag = e.def.magSize;
       e.reserve = e.def.reserveStart;
     }
-    for (const r of this.rockets) r.dispose();
-    this.rockets = [];
+    this.clearRockets();
     this.index = 0;
     this.cooldown = 0;
     this.bloom = 0;
@@ -544,6 +550,8 @@ export class WeaponSystem {
     const selfDamage = opt.selfDamage ?? 0;
     this.game.effects.explosion(pos, radius);
     this.game.audio.explosion();
+    // explosions are loud: alert every unaware enemy in a wide radius
+    this.game.enemies.alertNoise(pos, 46);
 
     // splash damage to enemies (falloff with distance)
     for (const e of [...this.game.enemies.enemies]) {
