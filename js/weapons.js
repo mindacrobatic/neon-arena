@@ -26,13 +26,14 @@ export const WEAPON_DEFS = [
     vm: { x: 0.26, y: -0.25, z: -0.4 },
   },
   {
-    id: 'shotgun', name: 'BREACH-12 SHOTGUN', short: 'BREACH', kind: 'hitscan', auto: false,
-    fireDelay: 0.8, damage: 15, pellets: 9, range: 45,
-    magSize: 6, reserveStart: 30, reserveMax: 54, reloadTime: 2.1, ammoPick: 14,
-    spread: 0.042, bloomPerShot: 0.012, bloomMax: 0.07,
-    recoil: { aim: 0.042, view: 6.5, shake: 0.22 },
-    tracerColor: 0xffcc88, flashSize: 0.3, accent: 0xff9944,
-    vm: { x: 0.28, y: -0.27, z: -0.42 },
+    id: 'tesla', name: 'ARC-9 TESLA GUN', short: 'ARC-9', kind: 'hitscan', auto: true,
+    fireDelay: 0.13, damage: 20, pellets: 1, range: 85,
+    magSize: 24, reserveStart: 120, reserveMax: 240, reloadTime: 1.55, ammoPick: 60,
+    spread: 0.008, bloomPerShot: 0.004, bloomMax: 0.035,
+    recoil: { aim: 0.007, view: 1.6, shake: 0.05 },
+    tracerColor: 0x99eeff, flashSize: 0.24, accent: 0x44ddff,
+    chain: { jumps: 3, radius: 9, falloff: 0.6 },
+    vm: { x: 0.27, y: -0.25, z: -0.38 },
   },
   {
     id: 'sniper', name: 'LONGVIEW RAILGUN', short: 'LONGVIEW', kind: 'hitscan', auto: false,
@@ -103,16 +104,22 @@ function buildViewmodel(def) {
       g.add(B(0.11, 0.015, 0.1, A, 0, 0.062, -0.2));         // top accent
       muzzle.position.set(0, 0.01, -0.58);
       break;
-    case 'shotgun':
-      g.add(C(0.032, 0.032, 0.72, M2, 0, 0.015, -0.48));     // barrel
-      g.add(C(0.022, 0.022, 0.6, M, 0, -0.05, -0.42));       // tube magazine
-      g.add(B(0.1, 0.12, 0.32, M, 0, 0, -0.04));             // receiver
-      g.add(B(0.095, 0.075, 0.17, P, 0, -0.055, -0.38));     // pump
-      g.add(B(0.085, 0.13, 0.32, P, 0, -0.05, 0.22, 0.18));  // stock
-      g.add(B(0.008, 0.03, 0.5, A, 0.05, 0.03, -0.3));
-      g.add(B(0.008, 0.03, 0.5, A, -0.05, 0.03, -0.3));
-      muzzle.position.set(0, 0.015, -0.86);
+    case 'tesla': {
+      g.add(B(0.1, 0.13, 0.4, M, 0, 0, -0.08));              // receiver
+      g.add(B(0.055, 0.15, 0.09, P, 0, -0.14, 0.0, 0.25));   // grip
+      g.add(B(0.06, 0.11, 0.24, P, 0, -0.03, 0.2));          // stock
+      g.add(C(0.026, 0.026, 0.56, M2, 0, 0.02, -0.52));      // barrel core
+      for (let i = 0; i < 4; i++)                            // tesla coil rings
+        g.add(C(0.052 - i * 0.007, 0.052 - i * 0.007, 0.03, A, 0, 0.02, -0.32 - i * 0.12, 14));
+      g.add(B(0.045, 0.15, 0.07, A, 0, -0.13, -0.16));       // energy cell (glowing mag)
+      g.add(C(0.011, 0.011, 0.24, M2, 0.055, 0.02, -0.84, 8));   // electrode L
+      g.add(C(0.011, 0.011, 0.24, M2, -0.055, 0.02, -0.84, 8));  // electrode R
+      const orb = new THREE.Mesh(new THREE.SphereGeometry(0.034, 10, 8), A);
+      orb.position.set(0, 0.02, -0.95);                      // discharge orb
+      g.add(orb);
+      muzzle.position.set(0, 0.02, -0.95);
       break;
+    }
     case 'sniper':
       g.add(C(0.024, 0.024, 0.95, M2, 0, 0.01, -0.62));      // barrel
       g.add(B(0.09, 0.11, 0.5, M, 0, 0, -0.16));             // receiver
@@ -430,14 +437,17 @@ export class WeaponSystem {
 
     // muzzle flash (world sprite + lights in both scenes)
     this.flashT = 0.055;
-    this.flashI = def.id === 'sniper' ? 16 : def.id === 'shotgun' ? 12 : def.id === 'rocket' ? 14 : 7;
+    this.flashI = def.id === 'sniper' ? 16 : def.id === 'tesla' ? 9 : def.id === 'rocket' ? 14 : 7;
+    const flashCol = def.id === 'tesla' ? 0x99eeff : def.id === 'rocket' ? 0xff8844 : 0xffdd99;
     this.flash.position.copy(muzzleW);
+    this.flash.material.color.set(flashCol);
     this.flash.material.rotation = Math.random() * Math.PI;
     this.flash.scale.setScalar(def.flashSize * (0.8 + Math.random() * 0.5));
     this.flash.visible = true;
+    this.worldFlashLight.color.set(flashCol);
     this.worldFlashLight.position.copy(muzzleW);
     this.vmMuzzleLight.position.copy(muzzleLocal);
-    this.vmMuzzleLight.color.set(def.id === 'rocket' ? 0xff8844 : 0xffdd99);
+    this.vmMuzzleLight.color.set(flashCol);
 
     if (def.kind === 'projectile') {
       const right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
@@ -474,18 +484,53 @@ export class WeaponSystem {
         const enemy = h.object.userData.enemy;
         if (enemy) {
           const mult = h.object.userData.mult ?? 1;
-          let dmg = def.damage * mult;
-          if (def.id === 'shotgun') dmg *= Math.max(0.3, 1 - (h.distance / def.range) * 0.8);
+          const dmg = def.damage * mult;
           this.game.enemies.damageEnemy(enemy, dmg, h.point, d);
-          this.game.effects.spark(h.point, 0xff9944, 7, 5.5, 0.05);
+          this.game.effects.spark(h.point, def.chain ? 0x99eeff : 0xff9944, 7, 5.5, 0.05);
+          if (def.chain) this.chainArc(def, enemy, h.point);
         } else {
           this.game.effects.spark(h.point, 0xcccccc, 5, 4, 0.045);
         }
       }
       const tFrom = new THREE.Vector3().copy(muzzleW).addScaledVector(d, 0.05);
-      this.game.effects.tracer(tFrom, end, def.tracerColor);
+      if (def.chain) this.game.effects.lightning(tFrom, end, def.tracerColor);
+      else this.game.effects.tracer(tFrom, end, def.tracerColor);
     }
     this.raycaster.far = Infinity;
+  }
+
+  /**
+   * Tesla chain: after the primary bolt hits an enemy, arc to up to
+   * `chain.jumps` further enemies within `chain.radius`, each jump dealing
+   * `chain.falloff` of the previous jump's damage. Never re-hits a target.
+   */
+  chainArc(def, firstEnemy, firstPoint) {
+    const ch = def.chain;
+    const struck = new Set([firstEnemy]);
+    let from = firstPoint.clone();
+    let last = firstEnemy;
+    let dmg = def.damage;
+    for (let j = 0; j < ch.jumps; j++) {
+      const lp = last.group.position;
+      let best = null, bestD = ch.radius;
+      for (const e of this.game.enemies.enemies) {
+        if (e.state === 'dying' || struck.has(e)) continue;
+        const ep = e.group.position;
+        const dd = Math.hypot(ep.x - lp.x, ep.y - lp.y, ep.z - lp.z);
+        if (dd < bestD) { bestD = dd; best = e; }
+      }
+      if (!best) break;
+      struck.add(best);
+      dmg *= ch.falloff;
+      const bp = best.group.position;
+      const to = new THREE.Vector3(bp.x, bp.y + 1.0 * best.baseScale, bp.z);
+      const jdir = to.clone().sub(from).normalize();
+      this.game.effects.lightning(from, to, def.tracerColor);
+      this.game.effects.spark(to, 0x99eeff, 5, 4.5, 0.05);
+      this.game.enemies.damageEnemy(best, dmg, to, jdir);
+      from = to;
+      last = best;
+    }
   }
 
   /**

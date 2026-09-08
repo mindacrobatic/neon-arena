@@ -34,6 +34,7 @@ export class Effects {
     this.sparks = [];
     this.tracers = [];
     this.blasts = [];
+    this.bolts = [];
     this.sparkMats = new Map();
     // Pooled explosion light: stays in the scene permanently (intensity 0
     // when idle) so the light count never changes at runtime — adding/
@@ -83,6 +84,60 @@ export class Effects {
     this.tracers.push({ mesh, life: 0, maxLife: 0.07 });
   }
 
+  /**
+   * Jagged electric arc from `from` to `to` (tesla gun bolts / chain arcs).
+   * Additive-blended polyline with a couple of short forks; lives ~90 ms.
+   */
+  lightning(from, to, color = 0x88ddff) {
+    if (this.bolts.length > 60) return;
+    const dir = _v1.subVectors(to, from);
+    const len = dir.length();
+    if (len < 0.05) return;
+    dir.normalize();
+    // two arbitrary perpendicular axes for jitter
+    const perp1 = _v2.set(dir.y, -dir.x, 0);
+    if (perp1.lengthSq() < 0.001) perp1.set(0, dir.z, -dir.y);
+    perp1.normalize();
+    const perp2 = new THREE.Vector3().crossVectors(dir, perp1);
+
+    const segs = Math.max(4, Math.min(14, Math.round(len / 1.1)));
+    const amp = Math.min(0.34, len * 0.09);
+    const pts = [from.clone()];
+    for (let i = 1; i < segs; i++) {
+      const p = new THREE.Vector3().copy(from).addScaledVector(dir, (i / segs) * len);
+      const t = i / segs;
+      const w = Math.sin(t * Math.PI); // pin the ends, wobble the middle
+      const j = amp * w;
+      p.addScaledVector(perp1, (Math.random() - 0.5) * 2 * j);
+      p.addScaledVector(perp2, (Math.random() - 0.5) * 2 * j);
+      pts.push(p);
+    }
+    pts.push(to.clone());
+
+    const mat = new THREE.LineBasicMaterial({
+      color, transparent: true, opacity: 1,
+      blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+    });
+    const addLine = (points) => {
+      const geo = new THREE.BufferGeometry().setFromPoints(points);
+      const line = new THREE.Line(geo, mat);
+      this.scene.add(line);
+      return { line, geo };
+    };
+    const parts = [addLine(pts)];
+    // one short fork off a random mid vertex
+    if (segs >= 6) {
+      const fi = 2 + ((Math.random() * (pts.length - 4)) | 0);
+      const base = pts[fi];
+      const forkEnd = base.clone()
+        .addScaledVector(perp1, (Math.random() - 0.5) * len * 0.28)
+        .addScaledVector(perp2, (Math.random() - 0.5) * len * 0.28)
+        .addScaledVector(dir, (Math.random() - 0.3) * len * 0.15);
+      parts.push(addLine([base, forkEnd]));
+    }
+    this.bolts.push({ parts, mat, life: 0, maxLife: 0.09 });
+  }
+
   explosion(pos, radius) {
     const mat = new THREE.MeshBasicMaterial({
       color: 0xffaa33, transparent: true, opacity: 0.9,
@@ -126,6 +181,16 @@ export class Effects {
       }
       t.mesh.material.opacity = 0.85 * (1 - t.life / t.maxLife);
     }
+    for (let i = this.bolts.length - 1; i >= 0; i--) {
+      const b = this.bolts[i];
+      b.life += dt;
+      if (b.life >= b.maxLife) {
+        this._removeBolt(b);
+        this.bolts.splice(i, 1);
+        continue;
+      }
+      b.mat.opacity = 1 - b.life / b.maxLife;
+    }
     let strongest = null, strongestI = 0;
     for (let i = this.blasts.length - 1; i >= 0; i--) {
       const b = this.blasts[i];
@@ -148,6 +213,14 @@ export class Effects {
     this.blastLight.intensity = strongestI;
   }
 
+  _removeBolt(b) {
+    for (const p of b.parts) {
+      this.scene.remove(p.line);
+      p.geo.dispose();
+    }
+    b.mat.dispose();
+  }
+
   clear() {
     for (const s of this.sparks) this.scene.remove(s.mesh);
     this.sparks.length = 0;
@@ -161,6 +234,8 @@ export class Effects {
       b.mat.dispose();
     }
     this.blasts.length = 0;
+    for (const b of this.bolts) this._removeBolt(b);
+    this.bolts.length = 0;
     this.blastLight.intensity = 0;
   }
 }
