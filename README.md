@@ -40,7 +40,7 @@ python3 -m http.server 8000
 |---|---|---|---|
 | 1 | **M9 Sidearm** | hitscan | Semi-auto, infinite reserve ammo — your fallback |
 | 2 | **Viper SMG** | hitscan | Full-auto, fast, spread blooms while spraying |
-| 3 | **Breach-12 Shotgun** | hitscan | 9 pellets, massive close-range damage with falloff |
+| 3 | **ARC-9 Tesla Gun** | hitscan | Full-auto arc bolts that chain to up to 3 nearby robots with falloff |
 | 4 | **Longview Railgun** | hitscan | 130 dmg, right-mouse scope (FOV zoom + scope overlay), precise when still |
 | 5 | **Hellfire RPG** | projectile | Rocket with splash damage — careful, it can hurt you too |
 

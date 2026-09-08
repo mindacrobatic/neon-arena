@@ -75,10 +75,10 @@ export const AudioSys = {
         this.noise({ dur: 0.07, f0: 4200, f1: 700, peak: 0.32, t0: t });
         this.tone({ f0: 230, f1: 90, dur: 0.05, type: 'triangle', peak: 0.18, t0: t });
         break;
-      case 'shotgun':
-        this.noise({ dur: 0.32, f0: 2000, f1: 110, peak: 0.85, t0: t });
-        this.tone({ f0: 110, f1: 38, dur: 0.26, type: 'triangle', peak: 0.55, t0: t });
-        this.noise({ dur: 0.12, f0: 5000, f1: 1500, peak: 0.3, t0: t });
+      case 'tesla':
+        this.noise({ dur: 0.08, f0: 2400, f1: 5800, type: 'bandpass', q: 0.7, peak: 0.26, t0: t });
+        this.tone({ f0: 640, f1: 160, dur: 0.09, type: 'sawtooth', peak: 0.2, t0: t });
+        this.tone({ f0: 2100, f1: 1200, dur: 0.045, type: 'square', peak: 0.07, t0: t });
         break;
       case 'sniper':
         this.noise({ dur: 0.3, f0: 5200, f1: 300, peak: 0.75, t0: t });
