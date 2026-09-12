@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { pointInSolids } from './physics.js?v=2';
-import { makeGlowTexture } from './effects.js?v=2';
+import { pointInSolids } from './physics.js?v=3';
+import { makeGlowTexture } from './effects.js?v=3';
 
 /**
  * The five weapons. `kind` is either 'hitscan' (instant raycast bullets)
@@ -295,6 +295,7 @@ export class WeaponSystem {
     this.reloadDur = 0.001;
     this.fireHeld = false;
     this.switching = null;
+    this.ammoMul = 1;
     this.recoilZ = 0;
     this.recoilV = 0;
     this.zoom = false;
@@ -312,13 +313,17 @@ export class WeaponSystem {
     this.rockets = [];
   }
 
-  reset() {
+  reset(difficulty = null, rules = {}) {
+    // Difficulty + scenario scale the reserve economy (magazines stay fixed).
+    this.ammoMul = (difficulty?.ammo ?? 1) * (rules.ammoScale ?? 1);
     for (const e of this.entries) {
       e.mag = e.def.magSize;
-      e.reserve = e.def.reserveStart;
+      e.reserve = e.def.reserveStart === Infinity
+        ? Infinity
+        : Math.round(e.def.reserveStart * this.ammoMul);
     }
     this.clearRockets();
-    this.index = 0;
+    this.index = Math.min(Math.max(rules.startWeapon ?? 0, 0), this.entries.length - 1);
     this.cooldown = 0;
     this.bloom = 0;
     this.reloading = false;
@@ -398,7 +403,8 @@ export class WeaponSystem {
     for (const e of this.entries) {
       if (e.reserve === Infinity) continue;
       if (e.reserve < e.def.reserveMax) {
-        e.reserve = Math.min(e.def.reserveMax, e.reserve + e.def.ammoPick);
+        const pick = Math.max(1, Math.round(e.def.ammoPick * (this.ammoMul ?? 1)));
+        e.reserve = Math.min(e.def.reserveMax, e.reserve + pick);
         gained = true;
       }
     }

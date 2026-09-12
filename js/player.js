@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { collideHorizontal, collideVertical, findStepSupport } from './physics.js?v=2';
+import { collideHorizontal, collideVertical, findStepSupport } from './physics.js?v=3';
 
 const _attempt = new THREE.Vector3();
 

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { collideHorizontal, findStepSupport, findGround, pointInSolids } from './physics.js?v=2';
-import { makeGlowTexture } from './effects.js?v=2';
+import { collideHorizontal, findStepSupport, findGround, pointInSolids } from './physics.js?v=3';
+import { makeGlowTexture } from './effects.js?v=3';
 
 export const ENEMY_TYPES = {
   grunt: {
@@ -23,6 +23,12 @@ export const ENEMY_TYPES = {
 const PROJ_G = 6; // projectile gravity (used for aim compensation too)
 const glowTex = makeGlowTexture();
 const PROJ_GEO = new THREE.SphereGeometry(0.14, 10, 8);
+
+/** Fallback modifiers used if a manager has no difficulty configured. */
+const NEUTRAL = {
+  enemyHp: 1, enemyDamage: 1, enemySpeed: 1, enemyAim: 0.035,
+  enemySee: 1, enemyHear: 1,
+};
 
 const GEO = {
   leg: new THREE.BoxGeometry(0.18, 0.75, 0.22),
@@ -54,17 +60,24 @@ const _q1 = new THREE.Quaternion();
 class Enemy {
   constructor(type, pos, manager, opts = {}) {
     const def = ENEMY_TYPES[type];
+    const diff = manager.difficulty || NEUTRAL;
+    const rules = manager.rules || {};
     this.type = type;
     this.def = def;
     this.manager = manager;
     this.tier = opts.tier ?? 1;
     this.baseScale = def.scale;
-    this.maxHp = def.hp * (1 + (this.tier - 1) * 0.14);
+    this.maxHp = def.hp * (1 + (this.tier - 1) * 0.14) * diff.enemyHp;
     this.hp = this.maxHp;
-    this.attackDamage = def.damage * (1 + (this.tier - 1) * 0.07);
-    this.speed = def.speed * (1 + Math.min(0.2, (this.tier - 1) * 0.04));
+    this.attackDamage = def.damage * (1 + (this.tier - 1) * 0.07) * diff.enemyDamage;
+    this.speed = def.speed * (1 + Math.min(0.2, (this.tier - 1) * 0.04)) * diff.enemySpeed;
     this.radius = 0.42 * def.scale;
     this.height = 1.9 * def.scale;
+    // perception / pursuit, scaled by difficulty and scenario rules
+    this.see = def.see * diff.enemySee;
+    this.hear = def.hear * diff.enemyHear;
+    this.leash = rules.noLeash ? Infinity : def.leash;
+    this.aimError = diff.enemyAim;
 
     // guard / patrol setup
     this.home = pos.clone();
@@ -209,6 +222,14 @@ class Enemy {
       p.position.y + 1.0 + 0.5 * PROJ_G * tt * tt * 0.75,
       p.position.z + p.velocity.z * tt * 0.55
     );
+    // Difficulty-scaled aim error: a cone that widens with range, so an easy
+    // robot sprays and a nightmare robot puts rounds through the doorway.
+    const err = this.aimError * dist;
+    if (err > 0) {
+      _v2.x += (Math.random() * 2 - 1) * err;
+      _v2.y += (Math.random() * 2 - 1) * err * 0.6;
+      _v2.z += (Math.random() * 2 - 1) * err;
+    }
     ctx.fireProjectile(_v1, _v2, this);
   }
 
@@ -262,7 +283,7 @@ class Enemy {
       this.perceptT -= dt;
       if (this.perceptT <= 0) {
         this.perceptT = 0.16 + Math.random() * 0.1;
-        if (ctx.player.alive && (dist < this.def.hear || (dist < this.def.see && this.hasLOS(ctx)))) {
+        if (ctx.player.alive && (dist < this.hear || (dist < this.see && this.hasLOS(ctx)))) {
           this.manager.alertEnemy(this);
         }
       }
@@ -278,7 +299,7 @@ class Enemy {
 
     if (this.alerted) {
       const homeD = Math.hypot(gp.x - this.home.x, gp.z - this.home.z);
-      if (!this.returning && homeD > this.def.leash) this.returning = true;
+      if (!this.returning && homeD > this.leash) this.returning = true;
       if (this.returning) {
         // disengaged: walk home, ignore the player
         if (homeD < 1.6) {
@@ -501,9 +522,22 @@ export class EnemyManager {
     this.projectiles = [];
     this.total = 0;
     this.cleared = false;
+    this.difficulty = null;
+    this.rules = {};
   }
 
   get remaining() { return this.enemies.length; }
+
+  /** Apply the selected difficulty + the scenario's rules before reset(). */
+  setConfig(difficulty, rules) {
+    this.difficulty = difficulty || null;
+    this.rules = rules || {};
+  }
+
+  /** Scenario rule `alertOnStart`: every hostile begins already hunting. */
+  alertAll() {
+    for (const e of [...this.enemies]) this.alertEnemy(e);
+  }
 
   /** Deploy a fresh set of enemies from level placements. */
   reset(placements = []) {
