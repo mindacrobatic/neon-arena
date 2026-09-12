@@ -1,0 +1,10 @@
+{
+  "name": "neon-compound",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser FPS with no build step and no dependencies. This file exists so Node can run the level validator and wiring checker against the same modules the browser loads.",
+  "scripts": {
+    "validate": "node tools/validate-maps.mjs && node tools/check-wiring.mjs"
+  }
+}

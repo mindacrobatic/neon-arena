@@ -1,10 +1,11 @@
-import { WEAPON_DEFS } from './weapons.js?v=2';
+import { WEAPON_DEFS } from './weapons.js?v=3';
+import { SCENARIOS, DIFFICULTIES, DEFAULT_DIFFICULTY, getScenario, getDifficulty, fmtClock } from './scenarios.js?v=3';
 
 const $ = id => document.getElementById(id);
 
 /** DOM HUD: crosshair, hitmarker, panels, banners, damage feedback, screens. */
 export class HUD {
-  constructor() {
+  constructor(stats) {
     this.el = {
       healthFill: $('health-fill'),
       healthText: $('health-text'),
@@ -20,6 +21,8 @@ export class HUD {
       enemies: $('enemies-left'),
       score: $('score-num'),
       kills: $('kills-num'),
+      missionName: $('mission-name'),
+      missionDiff: $('mission-diff'),
       banner: $('banner'),
       msg: $('msg'),
       crosshair: $('crosshair'),
@@ -28,10 +31,17 @@ export class HUD {
       lowHealth: $('low-health'),
       scope: $('scope-overlay'),
       dmgLayer: $('dmg-indicators'),
+      scenarioList: $('scenario-list'),
+      scenarioDetail: $('scenario-detail'),
+      difficultyList: $('difficulty-list'),
+      difficultyDetail: $('difficulty-detail'),
       screens: { menu: $('menu-screen'), pause: $('pause-screen'), gameover: $('gameover-screen'), victory: $('victory-screen') },
+      goTitle: $('go-title'),
+      goMission: $('go-mission'),
       goScore: $('go-score'),
       goKills: $('go-kills'),
       goTime: $('go-time'),
+      vMission: $('v-mission'),
       vScore: $('v-score'),
       vKills: $('v-kills'),
       vTime: $('v-time'),
@@ -40,18 +50,103 @@ export class HUD {
     this.msgT = 0;
     this.bannerT = 0;
     this._cache = {};
+    this.stats = stats || {};
+    this.selection = { scenarioId: SCENARIOS[0].id, difficultyId: DEFAULT_DIFFICULTY };
+    this.onPreview = null;
 
     this.el.slots.innerHTML = WEAPON_DEFS
       .map((d, i) => `<div class="slot" data-i="${i}"><span class="key">${i + 1}</span><span class="nm">${d.short}</span></div>`)
       .join('');
     this.slotEls = [...this.el.slots.querySelectorAll('.slot')];
+
+    this._buildPickers();
   }
 
-  bind({ onPlay, onResume, onRestart, onRedeploy }) {
-    $('btn-play').addEventListener('click', onPlay);
+  // ---------- deploy screen: scenario + difficulty ----------
+
+  _buildPickers() {
+    this.el.scenarioList.innerHTML = SCENARIOS.map(s => {
+      const st = this.stats[s.id];
+      return `<button type="button" class="pick scenario" data-id="${s.id}" style="--accent:${s.color}">
+        <span class="pick-name">${s.name}</span>
+        <span class="pick-mode">${s.mode}</span>
+        <span class="pick-stat">${st ? `${st.hostiles} HOSTILES · ${st.supplies} SUPPLIES` : ''}</span>
+      </button>`;
+    }).join('');
+    this.scenarioEls = [...this.el.scenarioList.querySelectorAll('.scenario')];
+    for (const el of this.scenarioEls) {
+      el.addEventListener('click', () => this.setScenario(el.dataset.id));
+    }
+
+    this.el.difficultyList.innerHTML = DIFFICULTIES.map(d =>
+      `<button type="button" class="pick difficulty" data-id="${d.id}" style="--accent:${d.color}">${d.name}</button>`
+    ).join('');
+    this.diffEls = [...this.el.difficultyList.querySelectorAll('.difficulty')];
+    for (const el of this.diffEls) {
+      el.addEventListener('click', () => this.setDifficulty(el.dataset.id));
+    }
+
+    this.refreshPickers();
+  }
+
+  setScenario(id) {
+    if (!SCENARIOS.some(s => s.id === id)) return;
+    this.selection.scenarioId = id;
+    this.refreshPickers();
+    this.onPreview?.(id);
+  }
+
+  setDifficulty(id) {
+    if (!DIFFICULTIES.some(d => d.id === id)) return;
+    this.selection.difficultyId = id;
+    this.refreshPickers();
+  }
+
+  getSelection() { return { ...this.selection }; }
+
+  refreshPickers() {
+    const scenario = getScenario(this.selection.scenarioId);
+    const difficulty = getDifficulty(this.selection.difficultyId);
+    for (const el of this.scenarioEls) el.classList.toggle('active', el.dataset.id === scenario.id);
+    for (const el of this.diffEls) el.classList.toggle('active', el.dataset.id === difficulty.id);
+
+    const st = this.stats[scenario.id];
+    const rules = [];
+    if (scenario.rules.timeLimit) rules.push(`TIME LIMIT ${fmtClock(scenario.rules.timeLimit)}`);
+    if (scenario.rules.noLeash) rules.push('NO DISENGAGE');
+    if (scenario.rules.alertOnStart) rules.push('ALERTED ON ARRIVAL');
+    if (scenario.rules.startWeapon !== undefined) {
+      rules.push(`START: ${WEAPON_DEFS[scenario.rules.startWeapon].short}`);
+    }
+    this.el.scenarioDetail.innerHTML =
+      `<p>${scenario.description}</p>
+       <div class="detail-meta">
+         <span>${st ? st.hostiles : '?'} HOSTILES</span>
+         <span>${st ? st.supplies : '?'} SUPPLIES</span>
+         <span>OBJECTIVE: ${scenario.objective}</span>
+         ${rules.map(r => `<span class="rule">${r}</span>`).join('')}
+       </div>`;
+
+    this.el.difficultyDetail.innerHTML =
+      `<p>${difficulty.blurb}</p>
+       <div class="detail-meta">
+         <span>ENEMY HP &times;${difficulty.enemyHp}</span>
+         <span>ENEMY DAMAGE &times;${difficulty.enemyDamage}</span>
+         <span>YOU TAKE &times;${difficulty.playerDamage}</span>
+         <span>AMMO &times;${difficulty.ammo}</span>
+         <span>SCORE &times;${difficulty.score}</span>
+       </div>`;
+  }
+
+  // ---------- screens ----------
+
+  bind({ onPlay, onResume, onRestart, onRedeploy, onMenu, onScenarioPreview }) {
+    this.onPreview = onScenarioPreview || null;
+    $('btn-play').addEventListener('click', () => onPlay(this.getSelection()));
     $('btn-resume').addEventListener('click', onResume);
     $('btn-restart').addEventListener('click', onRestart);
     $('btn-redeploy').addEventListener('click', onRedeploy);
+    for (const el of document.querySelectorAll('.btn-menu')) el.addEventListener('click', onMenu);
   }
 
   update(dt, s) {
@@ -101,7 +196,13 @@ export class HUD {
     }
 
     // top panel
+    if (this._cache.mission !== s.missionLabel) { this.el.missionName.textContent = s.missionLabel; this._cache.mission = s.missionLabel; }
+    if (this._cache.threat !== s.threatLabel) { this.el.missionDiff.textContent = s.threatLabel; this._cache.threat = s.threatLabel; }
     if (this._cache.time !== s.time) { this.el.time.textContent = s.time; this._cache.time = s.time; }
+    if (this._cache.timeLow !== !!s.timeLow) {
+      this.el.time.classList.toggle('low', !!s.timeLow);
+      this._cache.timeLow = !!s.timeLow;
+    }
     if (this._cache.enemies !== s.enemiesLabel) { this.el.enemies.textContent = s.enemiesLabel; this._cache.enemies = s.enemiesLabel; }
     if (this._cache.score !== s.score) { this.el.score.textContent = s.score; this._cache.score = s.score; }
     if (this._cache.kills !== s.kills) { this.el.kills.textContent = s.kills; this._cache.kills = s.kills; }
@@ -155,11 +256,14 @@ export class HUD {
       this.el.screens[k].classList.toggle('hidden', k !== name);
     }
     if (name === 'gameover' && stats) {
+      this.el.goTitle.textContent = stats.reason || 'YOU DIED';
+      this.el.goMission.textContent = `${stats.mission} \u00B7 ${stats.difficulty}`;
       this.el.goScore.textContent = stats.score;
       this.el.goKills.textContent = stats.kills;
       this.el.goTime.textContent = stats.time;
     }
     if (name === 'victory' && stats) {
+      this.el.vMission.textContent = `${stats.mission} \u00B7 ${stats.difficulty}`;
       this.el.vScore.textContent = stats.score;
       this.el.vKills.textContent = stats.kills;
       this.el.vTime.textContent = stats.time;

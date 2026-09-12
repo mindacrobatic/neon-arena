@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>NEON COMPOUND — Three.js FPS</title>
-<link rel="stylesheet" href="css/style.css" />
+<link rel="stylesheet" href="css/style.css?v=3" />
 <script type="importmap">
 {
   "imports": {
@@ -52,6 +52,8 @@
   <div id="msg"></div>
 
   <div id="top-left" class="panel">
+    <div class="row"><span class="label">MISSION</span><span id="mission-name">&mdash;</span></div>
+    <div class="row"><span class="label">THREAT</span><span id="mission-diff">&mdash;</span></div>
     <div class="row"><span class="label">TIME</span><span id="time-num">0:00</span></div>
     <div class="row"><span class="label">HOSTILES</span><span id="enemies-left">&mdash;</span></div>
     <div class="row"><span class="label">SCORE</span><span id="score-num">0</span></div>
@@ -76,60 +78,72 @@
 </div>
 
 <div id="menu-screen" class="screen">
-  <div class="screen-box">
+  <div class="screen-box menu-box">
     <h1>NEON <span>COMPOUND</span></h1>
-    <p class="tagline">Explore the compound &middot; Every hostile is already out there &middot; Clear the sector</p>
-    <div class="controls-grid">
-      <b>W A S D</b><span>Move</span>
-      <b>SHIFT</b><span>Sprint</span>
-      <b>SPACE</b><span>Jump</span>
-      <b>MOUSE</b><span>Look</span>
-      <b>LMB</b><span>Fire</span>
-      <b>RMB (hold)</b><span>Railgun scope</span>
-      <b>R</b><span>Reload</span>
-      <b>G</b><span>Throw grenade</span>
-      <b>1 &hellip; 5 / WHEEL</b><span>Switch weapon</span>
-      <b>ESC / P</b><span>Pause</span>
-    </div>
+    <p class="tagline">Every hostile is already out there &middot; choose your insertion</p>
+
+    <div class="picker-label">SCENARIO</div>
+    <div id="scenario-list" class="scenario-list"></div>
+    <div id="scenario-detail" class="picker-detail"></div>
+
+    <div class="picker-label">DIFFICULTY</div>
+    <div id="difficulty-list" class="difficulty-list"></div>
+    <div id="difficulty-detail" class="picker-detail"></div>
+
     <button id="btn-play" class="btn">&#9654; DEPLOY</button>
-    <p class="hint">Your mouse will be captured &mdash; press ESC at any time to pause.</p>
+    <p class="hint">
+      W A S D move &middot; SHIFT sprint &middot; SPACE jump &middot; MOUSE look &middot;
+      LMB fire &middot; RMB scope &middot; R reload &middot; G grenade &middot;
+      1&hellip;5 weapons &middot; ESC pause
+    </p>
   </div>
 </div>
 
 <div id="pause-screen" class="screen hidden">
   <div class="screen-box">
     <h2>PAUSED</h2>
-    <button id="btn-resume" class="btn">RESUME</button>
+    <div class="btn-row">
+      <button id="btn-resume" class="btn">RESUME</button>
+      <button class="btn ghost btn-menu">MISSION SELECT</button>
+    </div>
   </div>
 </div>
 
 <div id="gameover-screen" class="screen hidden">
   <div class="screen-box">
-    <h2 class="dead">YOU DIED</h2>
+    <h2 class="dead" id="go-title">YOU DIED</h2>
+    <p class="mission-line" id="go-mission"></p>
     <div class="stats">
       <div><span class="label">SCORE</span><span id="go-score">0</span></div>
       <div><span class="label">KILLS</span><span id="go-kills">0</span></div>
       <div><span class="label">TIME</span><span id="go-time">0:00</span></div>
     </div>
-    <button id="btn-restart" class="btn">REDEPLOY</button>
+    <div class="btn-row">
+      <button id="btn-restart" class="btn">REDEPLOY</button>
+      <button class="btn ghost btn-menu">MISSION SELECT</button>
+    </div>
   </div>
 </div>
 
 <div id="victory-screen" class="screen hidden">
   <div class="screen-box">
     <h2 class="clear">SECTOR CLEARED</h2>
+    <p class="mission-line" id="v-mission"></p>
     <div class="stats">
       <div><span class="label">SCORE</span><span id="v-score">0</span></div>
       <div><span class="label">KILLS</span><span id="v-kills">0</span></div>
       <div><span class="label">TIME</span><span id="v-time">0:00</span></div>
       <div><span class="label">CLEAR BONUS</span><span id="v-bonus">+0</span></div>
     </div>
-    <button id="btn-redeploy" class="btn">REDEPLOY</button>
+    <div class="btn-row">
+      <button id="btn-redeploy" class="btn">REDEPLOY</button>
+      <button class="btn ghost btn-menu">MISSION SELECT</button>
+    </div>
   </div>
 </div>
 
 <div id="fatal"></div>
 
-<script type="module" src="js/main.js?v=2"></script>
+<script type="module" src="js/main.js?v=3"></script>
 </body>
 </html>

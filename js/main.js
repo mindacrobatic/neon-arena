@@ -1,13 +1,14 @@
 import * as THREE from 'three';
-import { createWorld } from './world.js?v=2';
-import { Effects } from './effects.js?v=2';
-import { Player } from './player.js?v=2';
-import { EnemyManager, ENEMY_TYPES } from './enemies.js?v=2';
-import { PickupManager } from './pickups.js?v=2';
-import { WeaponSystem } from './weapons.js?v=2';
-import { GrenadeSystem } from './grenades.js?v=2';
-import { HUD } from './hud.js?v=2';
-import { AudioSys } from './audio.js?v=2';
+import { createWorld } from './world.js?v=3';
+import { Effects } from './effects.js?v=3';
+import { Player } from './player.js?v=3';
+import { EnemyManager, ENEMY_TYPES } from './enemies.js?v=3';
+import { PickupManager } from './pickups.js?v=3';
+import { WeaponSystem } from './weapons.js?v=3';
+import { GrenadeSystem } from './grenades.js?v=3';
+import { HUD } from './hud.js?v=3';
+import { AudioSys } from './audio.js?v=3';
+import { SCENARIOS, getScenario, getDifficulty, fmtClock } from './scenarios.js?v=3';
 
 // ---------- renderer / scenes / cameras ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -33,17 +34,25 @@ const game = {
   time: 0,       // mission clock (seconds spent in the playing state)
   locked: false,
   deathT: 0,
+  scenario: null,
+  difficulty: null,
+  rules: {},
+  timeLimit: null,
   audio: AudioSys,
   hooks: {},
 };
 
 const world = createWorld(scene);
+world.activate(SCENARIOS[0].id);   // menu backdrop: the first scenario's arena
 game.world = world;
+
 const effects = new Effects(scene);
 game.effects = effects;
 const player = new Player(camera, world);
 game.player = player;
-const hud = new HUD();
+const hud = new HUD(world.stats);
+
+function scoreMul() { return game.difficulty ? game.difficulty.score : 1; }
 
 function angleToSourceDeg(pos) {
   const dx = pos.x - player.position.x;
@@ -72,7 +81,8 @@ let lastAlertSndT = -99, lastContactMsgT = -99;
 const enemies = new EnemyManager(scene, world, effects, {
   onPlayerDamage(amount, pos) {
     if (game.state !== 'playing' || !player.alive) return;
-    player.takeDamage(amount);
+    const dmg = amount * (game.difficulty ? game.difficulty.playerDamage : 1);
+    player.takeDamage(dmg);
     player.addShake(0.12 + amount * 0.004);
     game.hooks.onPlayerHurt(pos);
     // death is detected centrally in the game loop (covers every damage source)
@@ -83,7 +93,7 @@ const enemies = new EnemyManager(scene, world, effects, {
   },
   onKill(enemy) {
     game.kills++;
-    game.score += Math.round(ENEMY_TYPES[enemy.type].points * (enemy.tier || 1));
+    game.score += Math.round(ENEMY_TYPES[enemy.type].points * (enemy.tier || 1) * scoreMul());
     const pos = enemy.group.position;
     const r = Math.random();
     if (enemy.type === 'heavy' || r < 0.16) pickups.spawn(pos, 'health');
@@ -125,23 +135,39 @@ function fmtTime(s) {
   return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 }
 
-function startGame() {
+function startGame(sel) {
+  const scenario = getScenario(sel && sel.scenarioId);
+  const difficulty = getDifficulty(sel && sel.difficultyId);
+  game.scenario = scenario;
+  game.difficulty = difficulty;
+  game.rules = scenario.rules || {};
+  game.timeLimit = game.rules.timeLimit ?? null;
+
+  // swap in this scenario's arena before anything is placed on it
+  world.activate(scenario.id);
+
   game.score = 0;
   game.kills = 0;
   game.time = 0;
   game.deathT = 0;
   lastAlertSndT = -99;
   lastContactMsgT = -99;
+
+  enemies.setConfig(difficulty, game.rules);
   player.reset();
+  player.yaw = world.current ? world.current.spawnYaw : 0;
+  player.syncCamera(0, 0, 0, true);
   enemies.reset(world.enemyPlacements);   // every hostile is placed up front
+  if (game.rules.alertOnStart) enemies.alertAll();
   pickups.reset();
   for (const pl of world.pickupPlacements) pickups.spawn(pl.pos, pl.kind, true);
-  weapons.reset();
-  grenades.reset();
+  weapons.reset(difficulty, game.rules);
+  grenades.reset(difficulty, game.rules);
   effects.clear();
   game.state = 'playing';
   hud.showScreen(null);
-  hud.message('SWEEP THE COMPOUND — ELIMINATE ALL HOSTILES', 3);
+  hud.banner(scenario.name, 2.4);
+  hud.message(`${scenario.mode} \u2014 ${scenario.objective}`, 3.2);
 }
 
 function beginDeath() {
@@ -153,9 +179,40 @@ function beginDeath() {
   AudioSys.gameover();
 }
 
+function missionResult(reason) {
+  return {
+    reason,
+    mission: game.scenario ? game.scenario.mode : '',
+    difficulty: game.difficulty ? game.difficulty.name : '',
+  };
+}
+
 function toGameOver() {
   game.state = 'gameover';
-  hud.showScreen('gameover', { score: game.score, kills: game.kills, time: fmtTime(game.time) });
+  hud.showScreen('gameover', {
+    ...missionResult('YOU DIED'),
+    score: game.score,
+    kills: game.kills,
+    time: fmtTime(game.time),
+  });
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+
+/** Scenario rule `timeLimit` ran out — different heading, same result screen. */
+function toTimeExpired() {
+  if (game.state !== 'playing') return;
+  game.state = 'gameover';
+  weapons.release();
+  weapons.setZoom(false);
+  enemies.clearProjectiles();
+  grenades.clearLive();
+  AudioSys.gameover();
+  hud.showScreen('gameover', {
+    ...missionResult('TIME EXPIRED'),
+    score: game.score,
+    kills: game.kills,
+    time: fmtTime(game.time),
+  });
   if (document.pointerLockElement) document.exitPointerLock();
 }
 
@@ -170,13 +227,15 @@ function toVictory() {
   grenades.clearLive();
   const clearBonus = 1000;
   const timeBonus = Math.max(0, Math.round(1500 - game.time * 6));
-  game.score += clearBonus + timeBonus;
+  const bonus = Math.round((clearBonus + timeBonus) * scoreMul());
+  game.score += bonus;
   AudioSys.victory();
   hud.showScreen('victory', {
+    ...missionResult('SECTOR CLEARED'),
     score: game.score,
     kills: game.kills,
     time: fmtTime(game.time),
-    bonus: clearBonus + timeBonus,
+    bonus,
   });
   if (document.pointerLockElement) document.exitPointerLock();
 }
@@ -187,6 +246,30 @@ function pauseGame() {
   weapons.release();
   weapons.setZoom(false);
   hud.showScreen('pause');
+}
+
+/** Back to the deploy screen: clear the arena so the backdrop is clean. */
+function toMenu() {
+  game.state = 'menu';
+  weapons.release();
+  weapons.setZoom(false);
+  enemies.reset([]);
+  enemies.clearProjectiles();
+  weapons.clearRockets();
+  grenades.clearLive();
+  pickups.reset();
+  effects.clear();
+  if (document.pointerLockElement) document.exitPointerLock();
+  hud.showScreen('menu');
+}
+
+/** Live preview: picking a scenario in the menu swaps the arena behind it. */
+function previewScenario(scenarioId) {
+  if (game.state !== 'menu') return;
+  world.activate(getScenario(scenarioId).id);
+  player.reset();
+  player.yaw = world.current ? world.current.spawnYaw : 0;
+  player.syncCamera(0, 0, 0, true);
 }
 
 function requestLock() {
@@ -215,10 +298,12 @@ function resumeGame() {
 }
 
 hud.bind({
-  onPlay() { AudioSys.init(); startGame(); requestLock(); },
+  onPlay(sel) { AudioSys.init(); startGame(sel); requestLock(); },
   onResume() { AudioSys.init(); resumeGame(); },
-  onRestart() { startGame(); requestLock(); },
-  onRedeploy() { AudioSys.init(); startGame(); requestLock(); },
+  onRestart() { AudioSys.init(); startGame(hud.getSelection()); requestLock(); },
+  onRedeploy() { AudioSys.init(); startGame(hud.getSelection()); requestLock(); },
+  onMenu() { toMenu(); },
+  onScenarioPreview(scenarioId) { previewScenario(scenarioId); },
 });
 
 // ---------- input ----------
@@ -299,13 +384,17 @@ function updateHud(dt) {
   const spreadPx = weapons.currentSpread() *
     (window.innerHeight / 2) / Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
   const enemiesLabel = enemies.total > 0 ? `${enemies.remaining}/${enemies.total}` : '\u2014';
+  const remaining = game.timeLimit ? Math.max(0, game.timeLimit - game.time) : null;
   hud.update(dt, {
     health: player.health,
     maxHealth: player.maxHealth,
     alive: player.alive,
     weapon: ws,
     grenades: grenades.hudState(),
-    time: fmtTime(game.time),
+    time: remaining !== null ? fmtClock(remaining) : fmtTime(game.time),
+    timeLow: remaining !== null && remaining <= 45,
+    missionLabel: game.scenario ? game.scenario.short : '\u2014',
+    threatLabel: game.difficulty ? game.difficulty.name : '\u2014',
     enemiesLabel,
     score: game.score,
     kills: game.kills,
@@ -332,9 +421,10 @@ renderer.setAnimationLoop(() => {
       effects.update(dt);
       world.update(t);
       updateHud(dt);
-      // Central death check — catches every damage source (enemy fire,
-      // melee, rocket splash / self damage, grenades, ...).
-      if (!player.alive) beginDeath();
+      // Central failure check — covers every damage source (enemy fire,
+      // melee, rocket splash / self damage, grenades, ...) and the timer.
+      if (game.timeLimit && game.time >= game.timeLimit) toTimeExpired();
+      else if (!player.alive) beginDeath();
     } else if (game.state === 'dying') {
       game.deathT += dt;
       player.update(dt);

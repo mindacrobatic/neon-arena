@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { pointInSolids } from './physics.js?v=2';
+import { pointInSolids } from './physics.js?v=3';
 
 /**
  * Throwable frag grenades — a carried ammo type (not a weapon slot).
@@ -122,9 +122,11 @@ export class GrenadeSystem {
     this.live = [];
   }
 
-  reset() {
+  reset(difficulty = null, rules = {}) {
     this.clearLive();
-    this.count = GRENADE.start;
+    const base = rules.startGrenades ?? GRENADE.start;
+    const scaled = Math.round(base * (difficulty?.grenadeMul ?? 1));
+    this.count = Math.max(0, Math.min(GRENADE.max, scaled));
     this.cooldown = 0;
   }
 

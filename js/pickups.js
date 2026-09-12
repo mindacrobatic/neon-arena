@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { makeGlowTexture } from './effects.js?v=2';
+import { makeGlowTexture } from './effects.js?v=3';
 
 const glowTex = makeGlowTexture();
 
