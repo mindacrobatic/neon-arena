@@ -2,6 +2,10 @@
 
 **Scout the arena. Choose your approach. Clear the sector.**
 
+![The tiered Skyspire arena viewed from a raised platform with the Longview Railgun equipped](docs/screenshots/skyspire.png)
+
+*Overlooking Skyspire from the watch platform, captured in-game.*
+
 A browser-based first-person shooter built with [Three.js](https://threejs.org/).
 Explore four handcrafted arenas where robots guard, patrol, and react to what
 they see and hear. Every enemy is in place from the start, so you can scout a
