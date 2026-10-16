@@ -1,230 +1,255 @@
-# NEON COMPOUND — a Three.js ego shooter
+# Neon Compound
 
-A browser-based first-person **exploration shooter** built with plain
-[three.js](https://threejs.org/) (r160, loaded from CDN via import map).
-No build step, no assets — all geometry, textures and sounds are generated
-procedurally in code.
+**Scout the arena. Choose your approach. Clear the sector.**
 
-Instead of enemies popping in from nowhere, **every hostile is pre-placed in
-the level from the first second**: robots guard, patrol and scan their zones,
-and only engage when they notice you. Scout first, then choose how and when
-each fight starts.
+A browser-based first-person shooter built with [Three.js](https://threejs.org/).
+Explore four handcrafted arenas where robots guard, patrol, and react to what
+they see and hear. Every enemy is in place from the start, so you can scout a
+route before starting a fight.
 
-**Four hand-built arenas** and **four difficulty tiers** are chosen on the
-deploy screen before every mission.
+**4 arenas · 4 difficulty levels · 5 weapons · Procedural visuals and audio**
 
-## Run it
+No build step or asset downloads to manage. Geometry, textures, and sound effects
+are generated in code; Three.js r160 loads from a CDN.
 
-Serve the folder over HTTP and open it in a modern browser (Chrome/Firefox/Edge/Safari):
+[Quick start](#quick-start) · [Controls](#controls) · [Missions](#missions) ·
+[Weapons](#weapons) · [Enemy behavior](#enemy-behavior) · [Development](#development)
+
+## Quick start
+
+From the project folder, start a local web server:
 
 ```bash
-cd egoshooter
 python3 -m http.server 8000
-# → http://localhost:8000
 ```
 
-> An internet connection is required the first time because `three.js` itself
-> is fetched from the unpkg CDN. Opening `index.html` via `file://` usually
-> works too, but serving over HTTP is the reliable path.
+1. Open [localhost:8000](http://localhost:8000) in a modern desktop browser.
+2. Choose a scenario and difficulty on the deploy screen.
+3. Select **DEPLOY** to play. Press **Esc** or **P** to pause.
 
-> **Cache note:** simple static servers (like `python3 -m http.server`) send
-> no cache headers, so browsers can keep stale JS modules — and stale CSS —
-> in memory while loading a fresh `index.html`. Every module import and the
-> stylesheet link therefore carries a `?v=N` cache-buster. **After editing any
-> `js/` or `css/` file, bump the version in all import specifiers and in
-> `index.html`** (e.g. `sed -i '' 's/?v=3/?v=4/g' js/*.js js/maps/*.js index.html`),
-> or simply hard-reload the page (Cmd/Ctrl+Shift+R). `npm run validate` fails
-> if the versions are ever mixed. A stale stylesheet is worth knowing about:
-> the deploy-screen pickers are styled entirely by `css/style.css`, so an old
-> cached copy makes the menu fall back to raw browser buttons.
+Python 3 is needed for this server command. No package installation is required
+to play. An internet connection is needed to load Three.js unless your browser
+already has it cached.
 
-## Deploy screen
-
-The menu is the mission-select screen. Pick a **scenario** (which arena, which
-mission rules) and a **difficulty**, then hit DEPLOY. Selecting a scenario
-swaps the arena behind the menu as a live preview, and the panel under each
-picker spells out the objective, the hostile/supply count, any special rules,
-and exactly what the chosen difficulty changes. `MISSION SELECT` on the
-pause/death/victory screens takes you back to it.
-
-## The scenarios
-
-| Scenario | Arena | Character | Hostiles |
-|---|---|---|---|
-| **ASSAULT** | Neon Compound | The original walled compound: command platform, container yards, west terrace, northern stronghold, flank alleys. Balanced and open-ended. | 26 |
-| **CLOSE QUARTERS** | Slagworks Foundry | A smelting hall wrapped around a central furnace. Catwalk bridges link the furnace deck to two loading platforms — a two-level circuit above a ring corridor. Leaner ammo. | 25 |
-| **HIGH GROUND** | Skyspire | A stepped ziggurat in an open plaza; the stairs spiral around the tower. Long sightlines everywhere, so the roof is worth taking. Deploys you with the **Longview Railgun** and slightly more ammo. | 20 |
-| **BLACKOUT SWEEP** | Undercroft | A 3×3 basement warren of head-high dividers, pillars and two raised supply vaults. Short sightlines, ambushes, **no leash** — and the vents seal in **6:00**. | 24 |
-
-Every arena is built from the same dependency-free kit, so collision geometry
-and the level you see can never disagree, and all four are checked by the
-headless validator below.
-
-## Difficulty
-
-Chosen per mission; it scales the robots, your economy and your score.
-
-| Tier | Enemy HP | Enemy damage | Speed | Aim error | Enemy sight | Damage you take | Ammo | Start grenades | Score |
-|---|---|---|---|---|---|---|---|---|---|
-| **EASY** | ×0.75 | ×0.55 | ×0.90 | ±7.5% | ×0.85 | ×0.65 | ×1.6 | 5 | ×0.75 |
-| **NORMAL** | ×1 | ×1 | ×1 | ±3.5% | ×1 | ×1 | ×1 | 3 | ×1 |
-| **HARD** | ×1.35 | ×1.40 | ×1.08 | ±2.0% | ×1.12 | ×1.45 | ×0.8 | 2 | ×1.6 |
-| **NIGHTMARE** | ×1.80 | ×1.90 | ×1.16 | ±1.1% | ×1.25 | ×2.0 | ×0.6 | 1 | ×2.5 |
-
-"Aim error" is the size of the enemy's aim cone as a fraction of range: at 20 m
-a Nightmare shooter misses by ~0.2 m, an Easy one by ~1.5 m. Scenario rules
-stack on top (Skyspire starts you on the railgun, Undercroft is timed, and so
-on). Tier-2 elites in the level data still get their own +14% HP / +7% damage.
+> **Your objective:** eliminate every hostile. In Blackout Sweep, you must also
+> finish before the six-minute timer expires.
 
 ## Controls
 
-| Action | Key |
-|---|---|
-| Move | `W A S D` / arrow keys |
-| Sprint | hold `Shift` |
+| Action | Control |
+| :--- | :--- |
+| Move | `W` `A` `S` `D` or arrow keys |
+| Look | Mouse, captured during play |
+| Sprint | Hold `Shift` |
 | Jump | `Space` |
-| Look | Mouse (pointer lock) |
-| Fire | Left mouse |
-| Scope zoom (railgun only) | hold Right mouse |
+| Fire | Left mouse button |
+| Scope, railgun only | Hold right mouse button |
 | Reload | `R` |
 | Throw grenade | `G` |
-| Switch weapon | `1` … `5` or mouse wheel |
+| Switch weapon | `1`–`5` or mouse wheel |
 | Pause | `Esc` or `P` |
 
-## How enemies notice you
+## Missions
 
-Pre-placed robots idle (scanning around) or patrol a loop near their post
-until one of these happens:
+Selecting a scenario previews its arena behind the menu. The mission panel
+shows its objective, enemy and supply counts, and special rules. Use
+**MISSION SELECT** from the pause, defeat, or victory screen to choose again.
 
-- **Sight** — you are within their view range (shooters spot you from far
-  away, grunts only fairly close) with an unobstructed line of sight. The
-  range is scaled by difficulty.
-- **Hearing** — you walk right up to them (~8 m), even behind cover.
-- **Gunfire** — every shot makes noise: pistol ~16 m, SMG ~21 m, railgun
-  ~34 m. Enemies inside that radius wake up whether they can see you or not.
-  Explosions (rockets, grenades) alert a huge radius.
-- **Chained alarm** — when one robot is alerted (or shot), allies within
-  ~12–13 m are alerted with it. Fights tend to happen in groups — the ones
-  you can see.
-- **Leash** — chase you too far from their post and they disengage and walk
-  home, so you can't accidentally pull a whole arena into one corner.
-  (Undercroft switches this off.)
+| Scenario | Arena | Hostiles | What to expect |
+| :--- | :--- | ---: | :--- |
+| **Assault** | Neon Compound | 26 | An open-ended compound with container yards, raised positions, and flank routes. |
+| **Close Quarters** | Slagworks Foundry | 25 | A central furnace, ring corridor, and connected catwalks. Less reserve ammo. |
+| **High Ground** | Skyspire | 20 | A tiered tower with long sightlines. Start with the railgun selected, extra reserve ammo, and fewer grenades. |
+| **Blackout Sweep** | Undercroft | 24 | A basement maze with short sightlines. Six-minute limit; guards have no distance limit on pursuit. |
 
-An alerted enemy flashes, its health bar appears, and a short alarm beep plays
-(with a "CONTACT!" toast once per engagement).
+### Difficulty
 
-## The weapons
+Difficulty changes enemy strength and awareness, your supplies, and score rewards.
+Scenario rules apply on top of these settings.
 
-| # | Weapon | Type | Character |
-|---|---|---|---|
-| 1 | **M9 Sidearm** | hitscan | Semi-auto, infinite reserve ammo, *quiet* — pick off lone guards without waking the block |
-| 2 | **Viper SMG** | hitscan | Full-auto, fast, spread blooms while spraying |
-| 3 | **ARC-9 Tesla Gun** | hitscan | Full-auto arc bolts that chain to up to 3 nearby robots with falloff |
-| 4 | **Longview Railgun** | hitscan | 130 dmg, right-mouse scope (FOV zoom + scope overlay) — but the shot is loud |
-| 5 | **Hellfire RPG** | projectile | Rocket with splash damage — careful, it can hurt you too |
+| Difficulty | Experience | Reserve ammo | Score multiplier |
+| :--- | :--- | :---: | :---: |
+| **Easy** | Weaker, slower guards and generous supplies | ×1.6 | ×0.75 |
+| **Normal** | The default balance | ×1 | ×1 |
+| **Hard** | Tougher, more accurate guards and limited supplies | ×0.8 | ×1.6 |
+| **Nightmare** | Fast, heavily armored guards with sharp aim | ×0.6 | ×2.5 |
 
-Each weapon has its own procedural 3D viewmodel (rendered in a separate scene
-pass so it never clips into walls), recoil spring, muzzle flash + light,
-tracers, headshot multipliers, reload timing and ammo economy.
+<details>
+<summary><strong>Detailed difficulty values</strong></summary>
 
-### Grenades (`G`)
+Values are multipliers unless shown otherwise. Lower aim error means more
+accurate shots. Enemy damage and damage received are separate settings that
+both affect incoming enemy attacks.
 
-Carried throwables rather than a weapon slot: you deploy with 3 (modified by
-difficulty, max 6), and each ammo crate adds **+1**. They arc with your
-movement momentum, bounce off walls and crates, blink faster as the 2.2 s fuse
-burns down, then detonate for splash damage — including to you at point-blank
-range.
+| Setting | Easy | Normal | Hard | Nightmare |
+| :--- | ---: | ---: | ---: | ---: |
+| Enemy health | ×0.75 | ×1 | ×1.35 | ×1.80 |
+| Enemy damage | ×0.55 | ×1 | ×1.40 | ×1.90 |
+| Enemy speed | ×0.90 | ×1 | ×1.08 | ×1.16 |
+| Aim error, radians | 0.075 | 0.035 | 0.020 | 0.011 |
+| Sight range | ×0.85 | ×1 | ×1.12 | ×1.25 |
+| Hearing range | ×0.80 | ×1 | ×1.10 | ×1.20 |
+| Damage received | ×0.65 | ×1 | ×1.45 | ×2.0 |
+| Starting grenades, standard missions | 5 | 3 | 2 | 1 |
 
-## Gameplay
+High Ground uses a lower base grenade count. Tier-2 elites receive a further
+14% health and 7% damage increase, and award double score.
 
-- All enemies exist from the start: **grunts** (fast melee, short sight),
-  **shooters** (keep distance, glowing projectiles, long sight) and
-  **heavies** (tanky, 3-round bursts, bigger model). Tier-2 elites guard the
-  best positions (+14% HP, +7% damage, double score).
-- Enemies drop **health kits** and **ammo crates**; more supplies are placed
-  around each arena (13 per map — the best caches are guarded).
-- Headshots deal 2.2× damage; hitmarkers turn red on kills.
-- Score, kills, mission timer, hostiles `remaining/total`, dynamic crosshair
-  (opens up with spread/movement), directional damage indicators, health
-  vignette and a short death cam.
-- Victory: eliminate every hostile → **SECTOR CLEARED** with a clear bonus
-  (1000) plus a time bonus (up to 1500, decaying the longer you take), both
-  multiplied by the difficulty's score factor. Undercroft also has a **time
-  limit**; run it out and you get **TIME EXPIRED** instead.
+</details>
 
-## Project structure
+## Weapons
 
-```
-index.html          HUD markup, deploy screen, three.js import map
-css/style.css       neon HUD styling, screens, pickers, animations
-package.json        "type": "module" + `npm run validate` (no deps, no build)
-js/main.js          renderer, game states, mission setup, loop, input
-js/scenarios.js     scenario + difficulty definitions (pure data, no imports)
-js/kit.js           pure level-construction kit: shapes + collision solids
-js/maps/            one module per arena (compound, foundry, spire, catacomb)
-js/world.js         builds every arena once, swaps the active one, sky/lights
-js/player.js        mouse look, WASD physics, jump/gravity, step-assist, bob, shake, death cam
-js/weapons.js       5 weapon definitions (+ noise radii), viewmodels, hitscan/rockets, reload/switch/zoom
-js/grenades.js      throwable frag grenades (fuse, bounce physics, shared explosion)
-js/enemies.js       3 enemy types, idle/patrol + sight/hearing/noise alarm AI, difficulty scaling
-js/physics.js       circle-vs-AABB collision, step support, ground snapping (shared)
-js/pickups.js       health/ammo: permanent level placements + timed kill drops
-js/effects.js       sparks, tracers, explosions, glow textures
-js/audio.js         procedural WebAudio SFX (shots, explosion, hitmarks, alarm, victory, UI)
-js/hud.js           DOM HUD, deploy-screen pickers, screens
-tools/validate-maps.mjs   headless placement + reachability validator
-tools/check-wiring.mjs    import / DOM-id / cache-buster checker
-```
+| Slot | Weapon | Best use and tradeoff |
+| :---: | :--- | :--- |
+| `1` | **M9 Sidearm** | Semi-automatic, unlimited reserve ammo, and a smaller noise radius. Useful against isolated guards. |
+| `2` | **Viper SMG** | Rapid automatic fire. Spread increases during sustained bursts. |
+| `3` | **ARC-9 Tesla Gun** | Automatic arc bolts chain to up to three additional robots, losing damage with each jump. |
+| `4` | **Longview Railgun** | Scoped, high-damage shots with 130 base damage. Its loud report alerts distant guards. |
+| `5` | **Hellfire RPG** | Rockets deal splash damage to groups—and can hurt you at close range. |
 
-## Validating a level
+Each weapon has a procedural 3D model, recoil, muzzle effects, and its own reload
+and ammo behavior. Headshots deal **2.2× damage**; hitmarkers turn red on a kill.
 
-Hand-built 3D geometry is easy to get subtly wrong — an enemy buried in a
-wall, a supply crate on a roof with no way up. There is no build step, so
-`npm run validate` replays every map through the **same kit the browser
-uses** and checks the things you cannot eyeball:
+### Frag grenades
+
+Press **G** to throw without changing weapons. Grenades carry your movement
+momentum, bounce off surfaces, and detonate after **2.2 seconds**. Their splash
+damage can hurt you, too.
+
+You normally start with **3 grenades**, adjusted by difficulty and scenario.
+Ammo crates restore **1 grenade**, up to a maximum of **6**.
+
+## Enemy behavior
+
+The arenas contain three robot types: fast melee **grunts**, ranged **shooters**,
+and durable **heavies** that fire three-round bursts. Elite variants guard
+valuable positions.
+
+- **Scout before firing.** Guards scan or patrol until they detect a disturbance.
+  Cover and their facing direction matter.
+- **Watch the amber question mark.** Suspicion builds before combat. Break sight
+  and stay quiet to let it fade; partial suspicion does not alert nearby guards.
+- **Manage your noise.** Walking is quieter than sprinting. Gunfire and explosions
+  can alert enemies behind cover, and an alerted guard can warn nearby allies.
+- **Break contact to escape.** Guards investigate the last place they saw or heard
+  you, search, and return to their posts if they cannot find you.
+- **Use the terrain.** Robots follow routes around obstacles and up stairs, but
+  cannot jump. Most stop pursuing beyond their patrol area; Undercroft removes
+  that distance limit.
+
+An alerted guard flashes, reveals its health bar, and sounds an alarm. The HUD
+shows **CONTACT!** once per engagement.
+
+<details>
+<summary><strong>Detection and pursuit reference</strong></summary>
+
+| Mechanic | Behavior |
+| :--- | :--- |
+| Vision | 110° forward cone, with a ±45° vertical limit except at very close horizontal range. Requires clear line of sight; range scales with difficulty. |
+| Visual suspicion | Sustained sight fills the meter in about 0.9 seconds after detection. |
+| Footsteps | Walking reaches 40% of hearing range, about 3.2–3.6 m on Normal. Sprinting reaches the full 8–9 m. Standing still and airborne movement produce no footstep noise. |
+| Sound suspicion | Hearing alone fills the meter in 1.5 seconds. Guards turn toward the noise, which may expose you to visual detection. |
+| Suspicion decay | Without sight or noise, a full meter would take about 1.54 seconds to empty. |
+| Gunfire | Approximate alert radii: sidearm 16 m, SMG 21 m, railgun 34 m. Explosions alert a much larger area. |
+| Ally alarms | Alert nearby guards within about 12–13 m and share a remembered contact location. |
+| Search | Guards investigate the last known contact and scan there for four seconds. After 20 seconds without fresh evidence, a long or failed pursuit becomes a search in place. |
+| Navigation | Patrol, investigation, and return routes use collision-checked waypoint graphs. Unreachable targets do not trigger movement through walls. |
+
+Breaking sight while staying quiet stops the remembered player position from
+updating. Gunfire and explosions provide new sound locations; ally alarms share
+a contact location rather than continuously revealing the player. Ranged guards
+keep their distance while they can see you, then investigate when sight is lost.
+
+</details>
+
+## Supplies and scoring
+
+Each arena has **13 placed supplies**, with valuable caches guarded by enemies.
+Defeated robots can also drop health kits and ammo crates.
+
+Clear every hostile to earn **SECTOR CLEARED**, a **1,000-point clear bonus**,
+and a time bonus of up to **1,500 points**. Faster clears earn more; both bonuses
+scale with difficulty. In Undercroft, running out of time ends the mission with
+**TIME EXPIRED**.
+
+The HUD tracks health, ammo, score, kills, mission time, and remaining hostiles.
+Directional damage indicators help locate incoming fire.
+
+## Development
+
+The game uses plain JavaScript modules and runs without a build step. Node.js
+is used for the development checks below; no npm dependencies are required.
+
+### Project layout
+
+| Area | Files | Responsibility |
+| :--- | :--- | :--- |
+| Page and styling | `index.html`, `css/style.css` | Deploy screen, HUD markup, styles, and Three.js import map |
+| Game loop | `js/main.js` | Rendering, input, game states, and mission setup |
+| Mission data | `js/scenarios.js` | Scenarios, difficulty settings, and mission rules |
+| Arenas | `js/maps/`, `js/kit.js`, `js/world.js` | Map layouts, shared construction kit, and arena activation |
+| Movement | `js/player.js`, `js/physics.js` | Player controls, collision, jumping, and step support |
+| Combat | `js/weapons.js`, `js/grenades.js` | Weapons, projectiles, reloads, and explosions |
+| Enemy AI | `js/enemies.js`, `js/perception.js`, `js/navigation.js` | Behavior, detection, and collision-checked pathfinding |
+| Feedback and supplies | `js/hud.js`, `js/effects.js`, `js/audio.js`, `js/pickups.js` | Interface, visual effects, procedural audio, and pickups |
+| Validation | `tools/`, `package.json` | Map, wiring, perception, navigation, and integration checks |
+
+### Run the checks
 
 ```bash
-npm install          # not required — there are no dependencies
 npm run validate
 ```
 
+This checks all four maps using the same construction kit as the browser:
+
+- **Placement and reachability:** blocked spawns, objects inside geometry, and
+  enemies or pickups the player cannot reach.
+- **Wiring:** relative imports, HUD element IDs, and matching cache versions.
+- **Perception:** vision, movement noise, and suspicion rules.
+- **Navigation:** waypoint routes, stairs, body clearance, and unreachable targets.
+
+The map validator uses a 0.25 m grid and the game's movement rules, including
+0.56 m step assistance, gravity, and the player's approximately 1.45 m jump.
+
+### Run the AI integration tests
+
+Use **Node.js 22.15+** and a local copy of the **Three.js r160 ES module**.
+Point `THREE_MODULE` to that file; if it lives outside a JavaScript module
+package, save it with the `.mjs` extension.
+
+```bash
+THREE_MODULE=/absolute/path/three.module.mjs npm run test:ai
 ```
-scenarios
-  NEON COMPOUND [compound]       arena 62  enemies 26  supplies 13  solids 132  unreachable 0
-  SLAGWORKS FOUNDRY [foundry]    arena 54  enemies 25  supplies 13  solids  86  unreachable 0
-  ...
-```
 
-`tools/validate-maps.mjs` fails the run when a placement is inside geometry,
-when the spawn is blocked, or when an enemy/pickup cannot be **reached on
-foot**: it flood-fills a 0.25 m grid of standable heights from the spawn using
-the same movement rules as the game (0.56 m step-assist, gravity for drops,
-and the player's ~1.45 m jump). `tools/check-wiring.mjs` then verifies that
-every relative import resolves, that every DOM id the HUD looks up exists in
-`index.html`, and that the `?v=N` cache-busters agree.
+These tests exercise the real enemy update and world activation code, including
+raycasts, contact memory, alarms, path following, and stair movement. Only canvas
+painting is stubbed. Browser playtesting is still needed to verify visuals and feel.
 
-## Tweaking
+### Change the game
 
-Balance lives in plain data at the top of each system:
+| To change… | Start here |
+| :--- | :--- |
+| Difficulty and score multipliers | `DIFFICULTIES` in `js/scenarios.js` |
+| Mission rules and starting equipment | `SCENARIOS` in `js/scenarios.js` |
+| Arena layouts, enemies, and supplies | The arena module in `js/maps/` |
+| Weapon damage, fire rate, spread, recoil, or ammo | `WEAPON_DEFS` in `js/weapons.js` |
+| Robot stats, detection ranges, and pursuit limits | `ENEMY_TYPES` in `js/enemies.js` |
 
-- **Difficulty** → `DIFFICULTIES` in `js/scenarios.js` (stat, ammo, economy and
-  score multipliers per tier).
-- **Scenarios & mission rules** → `SCENARIOS` in `js/scenarios.js`
-  (`timeLimit`, `startWeapon`, `startGrenades`, `ammoScale`, `alertOnStart`,
-  `noLeash` — all optional).
-- **Level layout, enemy placements and supply placements** → one module per
-  arena under `js/maps/`. A map is a pure function that receives the kit
-  (`k.addBox`, `k.addStairs`, `k.addPylon`, `k.addPerimeter`) and returns
-  `{ arena, spawn, enemies, pickups }`. Register a new one in
-  `js/maps/index.js` and point a scenario at it with `mapId`.
-  Placements are validated against the geometry at load time (a bad spot logs
-  a warning and is skipped) and by `npm run validate`; stairs must keep steps
-  ≤ 0.56 high so the shared step-assist works.
-- Weapon feel → `WEAPON_DEFS` in `js/weapons.js` (damage, RPM via `fireDelay`,
-  spread/bloom, recoil, mag/reserve, zoom FOV, `noise` alert radius…).
-- Enemy types & alert behaviour → `ENEMY_TYPES` in `js/enemies.js`
-  (`see`/`hear`/`chain`/`leash` ranges, HP, speed, damage).
+To add an arena:
 
-Adding an arena costs one file: copy the structure of an existing module in
-`js/maps/`, describe the layout with kit calls, list the enemies and supplies,
-and run `npm run validate`.
+1. Create a module in `js/maps/` using an existing map as a reference.
+2. Build geometry with the shared kit (`addBox`, `addStairs`, `addPylon`,
+   `addPerimeter`) and return `{ arena, spawn, enemies, pickups }`.
+3. Register the map in `js/maps/index.js`, then reference its `mapId` in a scenario.
+4. Run `npm run validate` and playtest in the browser.
+
+Keep stair steps at or below **0.56 m** for step assistance. Invalid enemy or
+supply placements produce a warning and are skipped at load time; validation
+helps catch them before playtesting.
+
+### Refresh after editing
+
+If the browser shows old code or styles, hard-refresh with **Cmd/Ctrl + Shift + R**.
+Imports and the stylesheet use matching `?v=N` cache versions. When bumping that
+version, update all module import specifiers and the references in `index.html`
+together. `npm run validate` catches mismatched versions.
